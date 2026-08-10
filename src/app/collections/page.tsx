@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { FolderHeart, Plus, Folder, ShoppingBag, Copy, FileSpreadsheet, Sparkles, Check } from 'lucide-react';
+import { FolderHeart, Plus, Folder, ShoppingBag } from 'lucide-react';
 
 export default function CollectionsPage() {
   const [collections, setCollections] = useState<any[]>([]);
@@ -106,32 +106,27 @@ export default function CollectionsPage() {
 
       {/* Grid */}
       {loading ? (
-        <div className="text-center py-12 text-slate-500 text-xs">Đang tải bộ sưu tập...</div>
+        <div className="text-center py-12 text-slate-500 text-xs">Đang tải bộ sưu tập từ Database...</div>
+      ) : collections.length === 0 ? (
+        <div className="text-center py-16 glass-card rounded-3xl space-y-3">
+          <Folder className="w-12 h-12 text-slate-600 mx-auto" />
+          <h3 className="font-bold text-white text-base">Chưa có bộ sưu tập nào</h3>
+          <p className="text-xs text-slate-400">Bấm nút "TẠO BỘ SƯU TẬP MỚI" để bắt đầu nhóm các sản phẩm lại.</p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {/* Default Preset Collections if empty */}
-          {[
-            { name: "Đồ Gia Dụng Thông Minh", desc: "Các sản phẩm tiện ích nhà bếp & dọn dẹp", count: 42, icon: "🏠" },
-            { name: "Sản Phẩm Commission >15%", desc: "Top hoa hồng cao nhất hỗ trợ tối đa doanh thu", count: 18, icon: "⚡" },
-            { name: "Đồ Mẹ & Bé Hot Trend", desc: "Đèn chống cận, đồ chơi thông minh cho trẻ", count: 25, icon: "🧸" },
-            ...collections,
-          ].map((col, idx) => (
-            <div key={idx} className="glass-card p-6 rounded-2xl space-y-4 hover:border-purple-500/50 transition-all">
+          {collections.map((col) => (
+            <div key={col.id} className="glass-card p-6 rounded-2xl space-y-4 hover:border-purple-500/50 transition-all">
               <div className="flex items-center justify-between">
-                <div className="text-3xl">{col.icon || '📁'}</div>
+                <div className="text-3xl">📁</div>
                 <span className="px-2.5 py-1 rounded-full bg-purple-500/20 text-purple-300 font-extrabold text-xs">
-                  {col.count || col.products?.length || 0} Sản phẩm
+                  {col.products?.length || 0} Sản phẩm
                 </span>
               </div>
 
               <div>
                 <h3 className="font-bold text-white text-base">{col.name}</h3>
-                <p className="text-xs text-slate-400">{col.desc || col.description || 'Bộ sưu tập cá nhân'}</p>
-              </div>
-
-              <div className="pt-2 flex items-center justify-between text-xs text-purple-400 font-semibold cursor-pointer hover:underline">
-                <span>Xem danh sách sản phẩm</span>
-                <span>→</span>
+                <p className="text-xs text-slate-400">{col.description || 'Bộ sưu tập cá nhân'}</p>
               </div>
             </div>
           ))}

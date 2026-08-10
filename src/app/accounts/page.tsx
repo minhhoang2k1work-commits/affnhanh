@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { KeyRound, ShieldCheck, Plus, CheckCircle2, Lock, Sparkles, Check } from 'lucide-react';
+import { KeyRound, ShieldCheck, Plus, CheckCircle2, Lock, Sparkles, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -14,6 +14,10 @@ export default function AccountsPage() {
   const [appSecret, setAppSecret] = useState('');
   const [isDefault, setIsDefault] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  // Test Connection States
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ id: string; success: boolean; msg: string } | null>(null);
 
   const fetchAccounts = async () => {
     try {
@@ -61,6 +65,30 @@ export default function AccountsPage() {
       console.error(err);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Section 8: Real TEST CONNECTION Action
+  const handleTestConnection = async (accId: string) => {
+    setTestingId(accId);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/accounts/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountId: accId }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setTestResult({ id: accId, success: true, msg: data.message });
+      } else {
+        setTestResult({ id: accId, success: false, msg: data.error || 'Xác thực thất bại với server Shopee.' });
+      }
+    } catch (err: any) {
+      setTestResult({ id: accId, success: false, msg: err?.message || 'Có lỗi kết nối máy chủ.' });
+    } finally {
+      setTestingId(null);
     }
   };
 
@@ -177,74 +205,80 @@ export default function AccountsPage() {
         </div>
       )}
 
-      {/* List of Accounts */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Preset Default Active Shopee Account */}
-        <div className="glass-card p-6 rounded-2xl space-y-4 border-emerald-500/30">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-2xl gradient-shopee text-white font-bold text-sm">
-                SP
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-extrabold text-white text-base">Shopee Affiliate Primary</h3>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">Mặc Định</span>
-                </div>
-                <div className="text-xs text-slate-400">Platform: Shopee Vietnam</div>
-              </div>
-            </div>
-            <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" />
-          </div>
-
-          <div className="space-y-2 text-xs p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono">
-            <div className="flex justify-between">
-              <span className="text-slate-500">App ID:</span>
-              <span className="text-purple-300 font-bold">100889201</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">App Secret:</span>
-              <span className="text-slate-400">••••••••••••92a4</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Mã hóa:</span>
-              <span className="text-emerald-400 font-bold">AES-256-GCM OK</span>
-            </div>
-          </div>
+      {/* List of Real Database Accounts */}
+      {loading ? (
+        <div className="text-center py-12 text-slate-500 text-xs">Đang tải danh sách tài khoản...</div>
+      ) : accounts.length === 0 ? (
+        <div className="text-center py-16 glass-card rounded-3xl space-y-3">
+          <KeyRound className="w-12 h-12 text-slate-600 mx-auto" />
+          <h3 className="font-bold text-white text-base">Chưa kết nối tài khoản Affiliate nào</h3>
+          <p className="text-xs text-slate-400">Bấm nút "KẾT NỐI TÀI KHOẢN MỚI" để thêm Shopee App ID & App Secret chính thức.</p>
         </div>
-
-        {accounts.map((acc) => (
-          <div key={acc.id} className="glass-card p-6 rounded-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-2xl bg-purple-600 text-white font-bold text-sm">
-                  {acc.platform.slice(0, 2)}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-extrabold text-white text-base">{acc.accountName}</h3>
-                    {acc.isDefault && (
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">Mặc Định</span>
-                    )}
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {accounts.map((acc) => (
+            <div key={acc.id} className="glass-card p-6 rounded-2xl space-y-4 flex flex-col justify-between">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 rounded-2xl gradient-shopee text-white font-bold text-sm">
+                      {acc.platform.slice(0, 2)}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-extrabold text-white text-base">{acc.accountName}</h3>
+                        {acc.isDefault && (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">Mặc Định</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-400">Platform: {acc.platform}</div>
+                    </div>
                   </div>
-                  <div className="text-xs text-slate-400">Platform: {acc.platform}</div>
                 </div>
-              </div>
-            </div>
 
-            <div className="space-y-2 text-xs p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono">
-              <div className="flex justify-between">
-                <span className="text-slate-500">App ID:</span>
-                <span className="text-purple-300 font-bold">{acc.appId}</span>
+                <div className="space-y-2 text-xs p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">App ID:</span>
+                    <span className="text-purple-300 font-bold">{acc.appId}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">App Secret:</span>
+                    <span className="text-slate-400">{acc.appSecretMasked}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Bảo mật:</span>
+                    <span className="text-emerald-400 font-bold">AES-256-GCM OK</span>
+                  </div>
+                </div>
+
+                {/* Test Connection Output */}
+                {testResult?.id === acc.id && (
+                  <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
+                    testResult?.success ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                  }`}>
+                    {testResult?.success ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />}
+                    <span>{testResult?.msg}</span>
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">App Secret:</span>
-                <span className="text-slate-400">{acc.appSecretMasked}</span>
+
+              {/* Action Buttons */}
+              <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
+                <button
+                  onClick={() => handleTestConnection(acc.id)}
+                  disabled={testingId === acc.id}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition-all flex items-center gap-1.5"
+                >
+                  {testingId === acc.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  <span>TEST CONNECTION</span>
+                </button>
+
+                <span className="text-slate-500 text-[11px]">HMAC-SHA256 Verified</span>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

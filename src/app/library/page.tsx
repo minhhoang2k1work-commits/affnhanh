@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useEffect, useState, useTransition, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import React, { useEffect, useState, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { 
   Search, 
-  Filter, 
   Copy, 
   Check, 
   ExternalLink, 
@@ -12,15 +12,14 @@ import {
   LayoutGrid, 
   Table, 
   FolderPlus, 
-  Download, 
   FileSpreadsheet, 
   Star, 
-  TrendingUp, 
   Flame, 
-  Zap,
   ShoppingBag,
   Store,
-  Layers
+  KeyRound,
+  RefreshCw,
+  Zap
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import * as XLSX from 'xlsx';
@@ -29,6 +28,7 @@ export const dynamic = 'force-dynamic';
 
 function LibraryContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const initialQuery = searchParams.get('q') || '';
 
   const [products, setProducts] = useState<any[]>([]);
@@ -41,6 +41,16 @@ function LibraryContent() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [generatingBulk, setGeneratingBulk] = useState(false);
+
+  // Section 21: Search with 300ms Debounce
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      fetchProducts();
+    }, 300);
+
+    return () => clearTimeout(handler);
+  }, [searchQuery, filterType, sortBy]);
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -55,23 +65,19 @@ function LibraryContent() {
         setProducts(data.products);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Error fetching library products:', err);
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchProducts();
-  }, [searchQuery, filterType, sortBy]);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3000);
   };
 
-  // Section 5: 1-Click Copy Affiliate Link
-  const handleCopyAffLink = (affUrl: string, origUrl: string, id: string) => {
+  // Section 20: 1-Click Copy Affiliate Link (Button state toggle for 2 seconds)
+  const handleCopyAffLink = (affUrl: string | null, origUrl: string, id: string) => {
     const linkToCopy = affUrl || origUrl;
     navigator.clipboard.writeText(linkToCopy);
     setCopiedId(id);
@@ -79,7 +85,58 @@ function LibraryContent() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Section 11: Bulk Selection & Copy All
+  // Section 10: Generate Affiliate Link for Single Product
+  const handleGenerateSingleLink = async (productId: string) => {
+    try {
+      const res = await fetch(`/api/products/${productId}/affiliate-link`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.status === 'pending_configuration') {
+          showToast('Bạn chưa kết nối tài khoản Affiliate!');
+          router.push('/accounts');
+          return;
+        }
+        showToast(data.error || 'Lỗi khi tạo link');
+        return;
+      }
+      showToast('Đã tạo Affiliate Link thành công!');
+      fetchProducts();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Section 10: Generate Affiliate Links for all pending items
+  const handleBatchGenerateAffiliate = async () => {
+    setGeneratingBulk(true);
+    try {
+      const res = await fetch('/api/products/bulk-affiliate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productIds: selectedIds.length > 0 ? selectedIds : undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.status === 'pending_configuration') {
+          showToast('Vui lòng kết nối tài khoản Affiliate trước!');
+          router.push('/accounts');
+          return;
+        }
+        showToast(data.error || 'Lỗi khi tạo link hàng loạt');
+        return;
+      }
+      showToast(`Đã khởi tạo ${data.successCount} Affiliate Links thành công!`);
+      fetchProducts();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setGeneratingBulk(false);
+    }
+  };
+
+  // Section 22: Bulk Selection & Export
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
@@ -129,6 +186,8 @@ function LibraryContent() {
     showToast('Đã xuất file Excel thành công!');
   };
 
+  const unconfiguredCount = products.filter(p => p.affiliateStatus === 'pending_configuration' || !p.affiliateUrl).length;
+
   return (
     <div className="space-y-6 pb-12">
       {/* Toast Notification */}
@@ -139,17 +198,28 @@ function LibraryContent() {
         </div>
       )}
 
-      {/* Page Header & Search Bar (Section 6) */}
+      {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2">
             Thư Viện Sản Phẩm <span className="text-xs px-2.5 py-1 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 font-mono">{products.length} Items</span>
           </h1>
-          <p className="text-xs text-slate-400">Tìm kiếm & quản lý tất cả sản phẩm đã import từ các Shop.</p>
+          <p className="text-xs text-slate-400">Tìm kiếm & quản lý toàn bộ sản phẩm từ Database các Shop đã quét.</p>
         </div>
 
-        {/* View Mode Toggle */}
-        <div className="flex items-center gap-2">
+        {/* View Mode & Batch Link Button */}
+        <div className="flex items-center gap-3">
+          {unconfiguredCount > 0 && (
+            <button
+              onClick={handleBatchGenerateAffiliate}
+              disabled={generatingBulk}
+              className="px-4 py-2 rounded-xl bg-purple-600/30 border border-purple-500/40 text-purple-200 font-bold text-xs hover:bg-purple-600 hover:text-white transition-all flex items-center gap-1.5"
+            >
+              <Zap className="w-4 h-4 text-amber-300" />
+              <span>{generatingBulk ? 'Đang tạo link...' : 'TẠO LINK AFFILIATE CHO TẤT CẢ'}</span>
+            </button>
+          )}
+
           <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-slate-800 text-xs">
             <button
               onClick={() => setViewMode('grid')}
@@ -169,19 +239,19 @@ function LibraryContent() {
         </div>
       </div>
 
-      {/* Search Input Bar */}
+      {/* Section 21: Real Search Input Bar with 300ms Debounce */}
       <div className="relative">
         <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Tìm sản phẩm theo tên, shop, danh mục (bình nước, nồi chiên, son...)"
+          placeholder="Tìm sản phẩm theo tên, shop, danh mục, product ID (bình nước, nồi chiên, son...)"
           className="w-full bg-slate-900/90 border-2 border-slate-800 rounded-2xl pl-12 pr-4 py-3.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-all"
         />
       </div>
 
-      {/* Filter Tabs & Sort Dropdown (Section 7) */}
+      {/* Filter Tabs & Sort Dropdown */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -211,7 +281,6 @@ function LibraryContent() {
           </button>
         </div>
 
-        {/* Sort Select */}
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
@@ -225,7 +294,7 @@ function LibraryContent() {
         </select>
       </div>
 
-      {/* Section 11: Bulk Action Toolbar */}
+      {/* Section 22: Bulk Action Toolbar */}
       {selectedIds.length > 0 && (
         <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-900/90 to-indigo-900/90 border border-purple-500/50 flex items-center justify-between text-xs text-white shadow-xl animate-fade-in">
           <div className="flex items-center gap-3 font-semibold">
@@ -235,11 +304,18 @@ function LibraryContent() {
 
           <div className="flex items-center gap-2">
             <button
+              onClick={handleBatchGenerateAffiliate}
+              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs transition-all flex items-center gap-1.5"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>TẠO AFF LINK</span>
+            </button>
+            <button
               onClick={handleCopySelectedLinks}
               className="px-4 py-2 rounded-xl bg-white text-purple-950 font-extrabold text-xs shadow hover:bg-slate-100 transition-all flex items-center gap-1.5"
             >
               <Copy className="w-3.5 h-3.5" />
-              <span>COPY ALL AFF LINKS</span>
+              <span>COPY LINKS</span>
             </button>
             <button
               onClick={handleExportCSV}
@@ -256,20 +332,19 @@ function LibraryContent() {
       {loading ? (
         <div className="text-center py-16 space-y-3">
           <div className="w-8 h-8 rounded-full border-2 border-purple-500 border-t-transparent animate-spin mx-auto" />
-          <p className="text-xs text-slate-400">Đang tải thư viện sản phẩm...</p>
+          <p className="text-xs text-slate-400">Đang tải dữ liệu sản phẩm từ Database...</p>
         </div>
       ) : products.length === 0 ? (
         <div className="text-center py-16 glass-card rounded-3xl space-y-3">
           <ShoppingBag className="w-12 h-12 text-slate-600 mx-auto" />
           <h3 className="font-bold text-white text-base">Không tìm thấy sản phẩm nào</h3>
-          <p className="text-xs text-slate-400">Thử tìm kiếm từ khóa khác hoặc quét shop mới.</p>
+          <p className="text-xs text-slate-400">Thử tìm kiếm từ khóa khác hoặc dán link quét shop mới.</p>
         </div>
       ) : viewMode === 'grid' ? (
-        /* GRID CARD VIEW (Section 5) */
+        /* GRID CARD VIEW (Section 19 & 20) */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
           {products.map((p) => (
             <div key={p.id} className="glass-card rounded-2xl overflow-hidden flex flex-col justify-between group relative">
-              {/* Checkbox select */}
               <input
                 type="checkbox"
                 checked={selectedIds.includes(p.id)}
@@ -277,7 +352,6 @@ function LibraryContent() {
                 className="absolute top-3 left-3 z-10 w-5 h-5 rounded border-slate-700 text-purple-600 focus:ring-purple-500 cursor-pointer"
               />
 
-              {/* Product Image & Badges */}
               <div className="relative aspect-square overflow-hidden bg-slate-900">
                 <img
                   src={p.image}
@@ -285,19 +359,16 @@ function LibraryContent() {
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 
-                {/* Affiliate Score Badge (Section 7) */}
                 <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-slate-950/80 backdrop-blur border border-amber-500/40 text-amber-300 font-extrabold text-[11px] shadow flex items-center gap-1">
                   <Flame className="w-3 h-3 text-amber-400 fill-amber-400" />
                   <span>Score: {p.affiliateScore}/100</span>
                 </div>
 
-                {/* Commission % Badge */}
                 <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-full bg-emerald-500 text-slate-950 font-black text-xs shadow-lg">
                   Hoa Hồng {p.commissionRate}%
                 </div>
               </div>
 
-              {/* Content */}
               <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
                 <div className="space-y-1.5">
                   <div className="text-[11px] font-semibold text-purple-400 flex items-center gap-1">
@@ -307,7 +378,6 @@ function LibraryContent() {
                   <h3 className="text-xs font-bold text-white line-clamp-2 leading-relaxed">{p.name}</h3>
                 </div>
 
-                {/* Pricing & Sales Stats */}
                 <div className="pt-2 border-t border-slate-800/80 space-y-1">
                   <div className="flex items-baseline justify-between">
                     <span className="text-base font-black text-emerald-400">{formatCurrency(p.salePrice)}</span>
@@ -319,23 +389,32 @@ function LibraryContent() {
                       <Star className="w-3 h-3 fill-amber-300" /> {p.rating}
                     </span>
                   </div>
-                  <div className="text-[11px] text-purple-300 font-semibold">
-                    HH ước tính: {formatCurrency(p.estCommission)} / đơn
-                  </div>
                 </div>
 
-                {/* Actions (Section 5 Requirements) */}
+                {/* Actions & Section 20 Button State Toggle */}
                 <div className="pt-2 space-y-2">
-                  {/* Big COPY AFF LINK Button */}
-                  <button
-                    onClick={() => handleCopyAffLink(p.affiliateUrl, p.originalUrl, p.id)}
-                    className="w-full py-2.5 rounded-xl gradient-shopee text-white font-extrabold text-xs shadow-glow hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
-                  >
-                    {copiedId === p.id ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
-                    <span>COPY AFF LINK</span>
-                  </button>
+                  {p.affiliateUrl ? (
+                    <button
+                      onClick={() => handleCopyAffLink(p.affiliateUrl, p.originalUrl, p.id)}
+                      className={`w-full py-2.5 rounded-xl font-extrabold text-xs shadow-glow transition-all flex items-center justify-center gap-2 ${
+                        copiedId === p.id
+                          ? 'bg-emerald-500 text-slate-950'
+                          : 'gradient-shopee text-white hover:brightness-110 active:scale-95'
+                      }`}
+                    >
+                      {copiedId === p.id ? <Check className="w-4 h-4 stroke-[3]" /> : <Copy className="w-4 h-4" />}
+                      <span>{copiedId === p.id ? '✓ ĐÃ COPY' : 'COPY AFF LINK'}</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleGenerateSingleLink(p.id)}
+                      className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <Zap className="w-4 h-4 text-amber-300" />
+                      <span>TẠO AFF LINK</span>
+                    </button>
+                  )}
 
-                  {/* Secondary Action Row */}
                   <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                     <a
                       href={p.originalUrl}
@@ -371,8 +450,8 @@ function LibraryContent() {
                 <th className="p-3">Sản Phẩm</th>
                 <th className="p-3">Giá Bán</th>
                 <th className="p-3">Hoa Hồng %</th>
-                <th className="p-3">HH Ước Tính</th>
                 <th className="p-3">Score</th>
+                <th className="p-3">Trạng Thái Aff</th>
                 <th className="p-3">Thao Tác</th>
               </tr>
             </thead>
@@ -393,20 +472,41 @@ function LibraryContent() {
                   </td>
                   <td className="p-3 font-semibold text-emerald-400">{formatCurrency(p.salePrice)}</td>
                   <td className="p-3 font-bold text-purple-300">{p.commissionRate}%</td>
-                  <td className="p-3 font-semibold text-emerald-400">{formatCurrency(p.estCommission)}</td>
                   <td className="p-3">
                     <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold">
                       {p.affiliateScore}
                     </span>
                   </td>
                   <td className="p-3">
-                    <button
-                      onClick={() => handleCopyAffLink(p.affiliateUrl, p.originalUrl, p.id)}
-                      className="px-3 py-1.5 rounded-lg gradient-shopee text-white font-bold text-[11px] shadow hover:brightness-110 transition-all flex items-center gap-1"
-                    >
-                      {copiedId === p.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>COPY</span>
-                    </button>
+                    {p.affiliateUrl ? (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-[10px]">
+                        ✓ Sẵn sàng
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold text-[10px]">
+                        Chờ cấu hình
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-3">
+                    {p.affiliateUrl ? (
+                      <button
+                        onClick={() => handleCopyAffLink(p.affiliateUrl, p.originalUrl, p.id)}
+                        className={`px-3 py-1.5 rounded-lg font-bold text-[11px] transition-all flex items-center gap-1 ${
+                          copiedId === p.id ? 'bg-emerald-500 text-slate-950' : 'gradient-shopee text-white hover:brightness-110'
+                        }`}
+                      >
+                        {copiedId === p.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedId === p.id ? '✓ ĐÃ COPY' : 'COPY'}</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleGenerateSingleLink(p.id)}
+                        className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[11px] transition-all"
+                      >
+                        TẠO LINK
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Store, RefreshCw, Trash2, ExternalLink, ShieldCheck, CheckCircle2, PauseCircle, Loader2 } from 'lucide-react';
+import { Store, RefreshCw, Trash2, ExternalLink, CheckCircle2, PauseCircle, Loader2, ArrowRight } from 'lucide-react';
 
 export default function ShopsPage() {
   const [shops, setShops] = useState<any[]>([]);
@@ -38,13 +38,12 @@ export default function ShopsPage() {
     }
   };
 
+  // Section 24: Incremental Sync Shop
   const handleSyncNow = async (shopId: string) => {
     setSyncingId(shopId);
     try {
-      await fetch('/api/shops', {
+      await fetch(`/api/shops/${shopId}/sync`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'SYNC_NOW', shopId }),
       });
       fetchShops();
     } catch (err) {
@@ -76,7 +75,7 @@ export default function ShopsPage() {
             <Store className="w-7 h-7 text-purple-400" />
             <span>Quản Lý Shop Đang Theo Dõi</span>
           </h1>
-          <p className="text-xs text-slate-400">Tự động kiểm tra sản phẩm mới, cập nhật giá và hoa hồng định kỳ.</p>
+          <p className="text-xs text-slate-400">Tự động kiểm tra sản phẩm mới, cập nhật giá, hoa hồng và trạng thái tồn kho.</p>
         </div>
 
         <Link
@@ -126,7 +125,6 @@ export default function ShopsPage() {
                   </div>
                 </div>
 
-                {/* Auto Sync Toggle (Section 13) */}
                 <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs">
                   <div className="flex items-center gap-2">
                     {shop.isAutoSync ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <PauseCircle className="w-4 h-4 text-slate-500" />}
@@ -151,18 +149,17 @@ export default function ShopsPage() {
                   className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition-all flex items-center gap-1.5"
                 >
                   {syncingId === shop.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                  <span>Đồng Bộ Ngay</span>
+                  <span>ĐỒNG BỘ</span>
                 </button>
 
-                <a
-                  href={shop.shopUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2 rounded-xl bg-slate-900 text-slate-300 hover:text-white border border-slate-800 transition-all"
-                  title="Mở Shop gốc"
+                <Link
+                  href={`/library?q=${encodeURIComponent(shop.name)}`}
+                  className="p-2 rounded-xl bg-slate-900 text-slate-300 hover:text-white border border-slate-800 transition-all flex items-center gap-1 text-[11px]"
+                  title="Xem sản phẩm"
                 >
-                  <ExternalLink className="w-4 h-4" />
-                </a>
+                  <span>XEM SẢN PHẨM</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
 
                 <button
                   onClick={() => handleDeleteShop(shop.id)}

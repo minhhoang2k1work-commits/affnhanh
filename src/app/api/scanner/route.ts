@@ -1,22 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getAdapter } from '@/lib/adapters';
+import { validateBulkInput, validateShopUrl } from '@/lib/scanner/url';
+import { startScanJobQueue } from '@/lib/scanner/queue';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { shopUrl, shopUrls } = body;
-
-    const urlsToProcess: string[] = [];
-    if (Array.isArray(shopUrls) && shopUrls.length > 0) {
-      urlsToProcess.push(...shopUrls);
-    } else if (shopUrl && typeof shopUrl === 'string') {
-      urlsToProcess.push(shopUrl);
-    }
-
-    if (urlsToProcess.length === 0) {
-      return NextResponse.json({ error: 'Vui lòng nhập ít nhất 1 đường dẫn Shop.' }, { status: 400 });
-    }
 
     // Default system user
     let user = await db.user.findFirst();
@@ -29,157 +19,80 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Default Affiliate Account
-    let affAccount = await db.affiliateAccount.findFirst({
-      where: { userId: user.id, isDefault: true },
+    let inputUrls: string[] = [];
+    if (Array.isArray(shopUrls) && shopUrls.length > 0) {
+      inputUrls = shopUrls;
+    } else if (typeof shopUrls === 'string' && shopUrls.trim()) {
+      inputUrls = shopUrls.split('\n');
+    } else if (shopUrl && typeof shopUrl === 'string') {
+      inputUrls = [shopUrl];
+    }
+
+    if (inputUrls.length === 0) {
+      return NextResponse.json({ error: 'Vui lòng nhập đường dẫn Shop hợp lệ.' }, { status: 400 });
+    }
+
+    // Section 34: Validate Bulk Input (max 50 URLs)
+    const rawText = inputUrls.join('\n');
+    const bulkValidation = await validateBulkInput(rawText, 50);
+
+    if (bulkValidation.validItems.length === 0 && bulkValidation.invalidItems.length > 0) {
+      return NextResponse.json(
+        {
+          error: bulkValidation.invalidItems[0]?.errorMessage || 'Tất cả đường dẫn nhập vào đều không hợp lệ.',
+          invalidItems: bulkValidation.invalidItems,
+        },
+        { status: 400 }
+      );
+    }
+
+    const totalShopsToScan = bulkValidation.validItems.length + bulkValidation.invalidItems.length;
+
+    // Create ScanJob Record in DB
+    const scanJob = await db.scanJob.create({
+      data: {
+        userId: user.id,
+        type: inputUrls.length > 1 ? 'BULK' : 'SINGLE',
+        totalShops: totalShopsToScan,
+        status: 'queued',
+        progress: 0,
+      },
     });
 
-    const results = [];
+    // Create ScanJobItem Records in DB
+    const itemsToCreate = [
+      ...bulkValidation.validItems.map((val) => ({
+        scanJobId: scanJob.id,
+        shopUrl: val.normalizedUrl,
+        status: 'queued',
+      })),
+      ...bulkValidation.invalidItems.map((inv) => ({
+        scanJobId: scanJob.id,
+        shopUrl: inv.rawUrl,
+        status: 'invalid_url',
+        errorMessage: inv.errorMessage || 'Invalid URL',
+      })),
+    ];
 
-    for (const url of urlsToProcess) {
-      const adapter = getAdapter('SHOPEE');
-      const resolved = await adapter.resolveUrl(url);
+    await db.scanJobItem.createMany({
+      data: itemsToCreate,
+    });
 
-      const targetShopId = resolved.shopId || `shop_${Date.now()}`;
-      const shopDetails = await adapter.getShop(targetShopId);
-
-      // Upsert Shop into DB
-      const shopRecord = await db.shop.upsert({
-        where: {
-          platform_externalShopId: {
-            platform: shopDetails.platform,
-            externalShopId: shopDetails.externalShopId,
-          },
-        },
-        update: {
-          name: shopDetails.name,
-          logo: shopDetails.logo,
-          shopUrl: shopDetails.shopUrl,
-          lastSyncedAt: new Date(),
-        },
-        create: {
-          platform: shopDetails.platform,
-          externalShopId: shopDetails.externalShopId,
-          name: shopDetails.name,
-          logo: shopDetails.logo,
-          shopUrl: shopDetails.shopUrl,
-          lastSyncedAt: new Date(),
-        },
-      });
-
-      // Fetch products from Shop
-      const catalog = await adapter.getProducts(shopDetails.externalShopId, 35);
-      let affCount = 0;
-      const importedProducts = [];
-
-      for (const item of catalog) {
-        if (item.hasAffiliate) affCount++;
-
-        const productRecord = await db.product.upsert({
-          where: {
-            platform_externalProductId: {
-              platform: item.platform,
-              externalProductId: item.externalProductId,
-            },
-          },
-          update: {
-            name: item.name,
-            image: item.image,
-            price: item.price,
-            salePrice: item.salePrice,
-            sold: item.sold,
-            rating: item.rating,
-            stock: item.stock,
-            originalUrl: item.originalUrl,
-            category: item.category,
-            hasAffiliate: item.hasAffiliate,
-            commissionRate: item.commissionRate,
-            estCommission: item.estCommission,
-            affiliateScore: item.affiliateScore,
-          },
-          create: {
-            platform: item.platform,
-            shopId: shopRecord.id,
-            externalProductId: item.externalProductId,
-            name: item.name,
-            image: item.image,
-            price: item.price,
-            salePrice: item.salePrice,
-            sold: item.sold,
-            rating: item.rating,
-            stock: item.stock,
-            originalUrl: item.originalUrl,
-            category: item.category,
-            hasAffiliate: item.hasAffiliate,
-            commissionRate: item.commissionRate,
-            estCommission: item.estCommission,
-            affiliateScore: item.affiliateScore,
-          },
-        });
-
-        // Generate Affiliate Link automatically if product has affiliate
-        if (item.hasAffiliate) {
-          const affUrl = await adapter.generateAffiliateLink({
-            originUrl: item.originalUrl,
-            subIds: ['HUB_AUTO_IMPORT'],
-          });
-
-          await db.affiliateLink.upsert({
-            where: { id: `link_${productRecord.id}` },
-            update: {
-              affiliateUrl: affUrl,
-            },
-            create: {
-              id: `link_${productRecord.id}`,
-              userId: user.id,
-              productId: productRecord.id,
-              affiliateAccountId: affAccount?.id || null,
-              originalUrl: item.originalUrl,
-              affiliateUrl: affUrl,
-              subId: 'HUB_AUTO_IMPORT',
-            },
-          });
-        }
-
-        importedProducts.push(productRecord);
-      }
-
-      // Update shop counter
-      await db.shop.update({
-        where: { id: shopRecord.id },
-        data: {
-          productCount: catalog.length,
-          affProductCount: affCount,
-        },
-      });
-
-      // Log Sync Job
-      await db.syncJob.create({
-        data: {
-          shopId: shopRecord.id,
-          status: 'COMPLETED',
-          totalFound: catalog.length,
-          totalAffiliate: affCount,
-          completedAt: new Date(),
-        },
-      });
-
-      results.push({
-        shop: shopRecord,
-        totalFound: catalog.length,
-        totalAffiliate: affCount,
-        nonAffiliate: catalog.length - affCount,
-        products: importedProducts,
-      });
-    }
+    // Launch Background Queue Runner (Async without blocking response)
+    startScanJobQueue(scanJob.id);
 
     return NextResponse.json({
       success: true,
-      scannedCount: results.length,
-      results,
+      jobId: scanJob.id,
+      summary: {
+        totalInput: bulkValidation.totalInput,
+        validCount: bulkValidation.validItems.length,
+        invalidCount: bulkValidation.invalidItems.length,
+        duplicateCount: bulkValidation.duplicateCount,
+      },
     });
   } catch (error: any) {
-    console.error('Error scanning shop:', error);
-    return NextResponse.json({ error: error?.message || 'Có lỗi xảy ra khi quét Shop.' }, { status: 500 });
+    console.error('Error submitting scan job:', error);
+    return NextResponse.json({ error: error?.message || 'Có lỗi xảy ra khi khởi tạo lượt quét.' }, { status: 500 });
   }
 }

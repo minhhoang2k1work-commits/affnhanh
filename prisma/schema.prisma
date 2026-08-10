@@ -19,6 +19,9 @@ model User {
   collections       Collection[]
   videos            Video[]
   affiliateLinks    AffiliateLink[]
+  shops             Shop[]
+  products          Product[]
+  scanJobs          ScanJob[]
 }
 
 model AffiliateAccount {
@@ -38,12 +41,15 @@ model AffiliateAccount {
 
 model Shop {
   id                 String     @id @default(uuid())
+  userId             String     @default("default-user-id")
+  user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   platform           String     // "SHOPEE", "TIKTOK", "LAZADA"
   externalShopId     String     // e.g., "12345678"
   name               String
   logo               String?
   shopUrl            String
   isAutoSync         Boolean    @default(true)
+  isActive           Boolean    @default(true)
   productCount       Int        @default(0)
   affProductCount    Int        @default(0)
   status             String     @default("ACTIVE") // ACTIVE, PAUSED, ERROR
@@ -53,11 +59,13 @@ model Shop {
   products           Product[]
   syncJobs           SyncJob[]
 
-  @@unique([platform, externalShopId])
+  @@unique([userId, platform, externalShopId])
 }
 
 model Product {
   id                 String              @id @default(uuid())
+  userId             String              @default("default-user-id")
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   platform           String              // "SHOPEE", "TIKTOK", "LAZADA"
   shopId             String
   shop               Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
@@ -73,15 +81,62 @@ model Product {
   category           String?
   affiliateScore     Int                 @default(85) // Calculated Score (0-100)
   hasAffiliate       Boolean             @default(true)
+  affiliateStatus    String              @default("pending") // pending, processing, success, not_eligible, pending_configuration, failed
   commissionRate     Float               @default(5.0) // e.g., 5.5%
   estCommission      Float               @default(0)   // Estimated commission in VND
+  isActive           Boolean             @default(true)
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   affiliateLinks     AffiliateLink[]
   collectionProducts CollectionProduct[]
   videoProducts      VideoProduct[]
 
-  @@unique([platform, externalProductId])
+  @@unique([platform, shopId, externalProductId])
+  @@index([name])
+  @@index([shopId])
+  @@index([externalProductId])
+  @@index([affiliateScore])
+  @@index([userId])
+}
+
+model ScanJob {
+  id               String        @id @default(uuid())
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type             String        @default("SINGLE") // SINGLE, BULK
+  totalShops       Int           @default(0)
+  processedShops   Int           @default(0)
+  totalProducts    Int           @default(0)
+  processedProducts Int          @default(0)
+  affiliateSuccess Int           @default(0)
+  affiliateFailed  Int           @default(0)
+  status           String        @default("queued") // queued, processing, completed, partial_success, failed, cancelled
+  progress         Int           @default(0)        // 0-100 %
+  errorMessage     String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  items            ScanJobItem[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model ScanJobItem {
+  id               String    @id @default(uuid())
+  scanJobId        String
+  scanJob          ScanJob   @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
+  shopUrl          String
+  shopId           String?
+  shopName         String?
+  status           String    @default("queued") // queued, resolving, scanning, generating_affiliate, completed, failed, invalid_url
+  productCount     Int       @default(0)
+  affiliateSuccess Int       @default(0)
+  affiliateFailed  Int       @default(0)
+  errorMessage     String?
+  startedAt        DateTime?
+  completedAt      DateTime?
 }
 
 model AffiliateLink {

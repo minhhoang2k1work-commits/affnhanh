@@ -52,8 +52,9 @@ export async function POST(req: NextRequest) {
         if (item.hasAffiliate) affCount++;
         await db.product.upsert({
           where: {
-            platform_externalProductId: {
+            platform_shopId_externalProductId: {
               platform: item.platform,
+              shopId: shop.id,
               externalProductId: item.externalProductId,
             },
           },

@@ -16,6 +16,7 @@ model User {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   affiliateAccounts AffiliateAccount[]
+  shopeeConnections ShopeeConnection[]
   collections       Collection[]
   videos            Video[]
   affiliateLinks    AffiliateLink[]
@@ -37,6 +38,20 @@ model AffiliateAccount {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   affiliateLinks AffiliateLink[]
+}
+
+model ShopeeConnection {
+  id                   String    @id @default(uuid())
+  userId               String
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider             String    @default("BROWSER") // API, BROWSER
+  status               String    @default("DISCONNECTED") // DISCONNECTED, OPENING_BROWSER, VERIFICATION_REQUIRED, CONNECTED, EXPIRED
+  encryptedSessionPath String?
+  lastVerifiedAt       DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@unique([userId, provider])
 }
 
 model Shop {
@@ -86,9 +101,10 @@ model Product {
   extraCommissionRate  Float               @default(0) // e.g. 3.0 (%) Xtra
   totalCommissionRate  Float               @default(0) // base + extra (%)
   commissionRate       Float               @default(0) // e.g. 8.0 (%)
-  commissionSource     String?             // e.g. "Shopee Affiliate GraphQL API", "Shopee Offer API", "Unprovided"
+  commissionSource     String?             // e.g. "Shopee Affiliate GraphQL API", "browser", "Unprovided"
   commissionUpdatedAt  DateTime?
   estCommission        Float               @default(0) // Estimated commission in VND
+  dataSource           String              @default("api") // "api", "browser"
   isActive             Boolean             @default(true)
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
@@ -156,6 +172,7 @@ model AffiliateLink {
   affiliateUrl       String
   subId              String?
   status             String           @default("ACTIVE")
+  dataSource         String           @default("api") // "api", "browser"
   clickCount         Int              @default(0)
   orderCount         Int              @default(0)
   totalCommission    Float            @default(0)

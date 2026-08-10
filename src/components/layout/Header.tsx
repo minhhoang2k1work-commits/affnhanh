@@ -1,12 +1,26 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, ScanLine, Bell, ShieldCheck, Sparkles, Store } from 'lucide-react';
+import { Search, ScanLine, ShieldCheck, Store, MonitorPlay } from 'lucide-react';
 
 export function Header() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
+  const [providerStatus, setProviderStatus] = useState<string>('API Active');
+
+  useEffect(() => {
+    fetch('/api/browser-session/status')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.connected) {
+          setProviderStatus('Shopee Browser ● Active');
+        } else {
+          setProviderStatus('Shopee API ● Active');
+        }
+      })
+      .catch(() => setProviderStatus('Shopee API ● Active'));
+  }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,10 +46,10 @@ export function Header() {
 
       {/* Action Buttons & Status */}
       <div className="flex items-center gap-4">
-        {/* Monitored Shops Counter */}
+        {/* Active Provider Badge (Section 39) */}
         <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/50 text-xs text-slate-300">
-          <Store className="w-3.5 h-3.5 text-purple-400" />
-          <span>Shopee Adapter Active</span>
+          <MonitorPlay className="w-3.5 h-3.5 text-purple-400" />
+          <span className="font-semibold text-purple-300">{providerStatus}</span>
         </div>
 
         {/* Quick Shop Scanner CTA */}

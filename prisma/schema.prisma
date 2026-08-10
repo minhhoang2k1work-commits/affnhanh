@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -17,6 +17,8 @@ model User {
   updatedAt         DateTime           @updatedAt
   affiliateAccounts AffiliateAccount[]
   shopeeConnections ShopeeConnection[]
+  extensionDevices  ExtensionDevice[]
+  extensionJobs     ExtensionJob[]
   collections       Collection[]
   videos            Video[]
   affiliateLinks    AffiliateLink[]
@@ -124,6 +126,10 @@ model ScanJob {
   id               String        @id @default(uuid())
   userId           String
   user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source           String        @default("extension") // "extension", "api"
+  scanToken        String?
+  scanTokenExpiry  DateTime?
+  targetUrl        String?
   type             String        @default("SINGLE") // SINGLE, BULK
   totalShops       Int           @default(0)
   processedShops   Int           @default(0)
@@ -142,6 +148,43 @@ model ScanJob {
 
   @@index([userId])
   @@index([status])
+  @@index([scanToken])
+}
+
+model ExtensionDevice {
+  id               String   @id @default(uuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceToken      String   @unique
+  extensionVersion String?  @default("1.0.0")
+  lastSeenAt       DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([userId])
+  @@index([deviceToken])
+}
+
+model ExtensionJob {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String    // "SCAN_SHOP", "GENERATE_AFFILIATE_LINK"
+  targetUrl    String?
+  scanJobId    String?
+  productId    String?
+  payload      String?   // JSON stringified payload
+  status       String    @default("queued") // queued, claimed, processing, completed, failed, cancelled
+  result       String?   // JSON stringified result
+  errorMessage String?
+  claimedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([scanJobId])
 }
 
 model ScanJobItem {

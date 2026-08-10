@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "AFF HUB — Shopee Scanner Bridge",
+  "version": "1.0.0",
+  "description": "Chrome Extension Bridge kết nối Shopee với AFF HUB Web Application.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://shopee.vn/*",
+    "https://*.shopee.vn/*",
+    "https://affiliate.shopee.vn/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://shopee.vn/*",
+        "https://*.shopee.vn/*",
+        "https://affiliate.shopee.vn/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AFF HUB Extension Bridge"
+  }
+}

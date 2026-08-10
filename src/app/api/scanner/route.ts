@@ -92,7 +92,13 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error('Error submitting scan job:', error);
-    return NextResponse.json({ error: error?.message || 'Có lỗi xảy ra khi khởi tạo lượt quét.' }, { status: 500 });
+    console.error('[SCANNER_API_ERROR]:', error);
+
+    const isDbError = error?.message?.includes('Prisma') || error?.message?.includes('database') || error?.code === 14;
+    const userMessage = isDbError
+      ? 'Không thể kết nối cơ sở dữ liệu. Vui lòng kiểm tra cấu hình hệ thống.'
+      : (error?.message || 'Có lỗi xảy ra khi khởi tạo lượt quét.');
+
+    return NextResponse.json({ error: userMessage }, { status: 500 });
   }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { 
@@ -14,8 +14,10 @@ import {
   Settings,
   Sparkles,
   Link2,
-  TrendingUp,
-  Zap
+  Zap,
+  CheckCircle2,
+  XCircle,
+  AlertCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -70,6 +72,31 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [dbStatus, setDbStatus] = useState<'connected' | 'error' | 'checking'>('checking');
+  const [affStatus, setAffStatus] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Real DB Health Check (Section 5 & Task 8)
+    fetch('/api/health/database')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.status === 'connected') {
+          setDbStatus('connected');
+        } else {
+          setDbStatus('error');
+        }
+      })
+      .catch(() => setDbStatus('error'));
+
+    fetch('/api/dashboard/summary')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.integrationStatus?.affiliateDeepLink?.connected) {
+          setAffStatus(true);
+        }
+      })
+      .catch(() => setAffStatus(false));
+  }, []);
 
   return (
     <aside className="w-64 glass-panel border-r border-slate-800 flex flex-col h-screen sticky top-0 z-40 select-none">
@@ -142,14 +169,37 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom Footer */}
-      <div className="p-4 border-t border-slate-800/80">
-        <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span className="text-slate-300 font-medium">Shopee API Ready</span>
+      {/* Bottom Footer - Real Dynamic Health Status Badges (Section 8 Requirement) */}
+      <div className="p-4 border-t border-slate-800/80 space-y-2">
+        <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">Database:</span>
+            {dbStatus === 'connected' ? (
+              <span className="text-emerald-400 font-bold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Connected
+              </span>
+            ) : dbStatus === 'error' ? (
+              <span className="text-rose-400 font-bold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400" /> Error
+              </span>
+            ) : (
+              <span className="text-slate-500">Checking...</span>
+            )}
           </div>
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">Extension Bridge:</span>
+            <span className={extStatus === 'connected' ? 'text-emerald-400 font-bold flex items-center gap-1' : 'text-amber-300 font-bold'}>
+              {extStatus === 'connected' ? '● Connected' : '○ Not Connected'}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">Shopee Affiliate:</span>
+            <span className={affStatus ? 'text-emerald-400 font-bold' : 'text-amber-300 font-bold'}>
+              {affStatus ? 'Connected' : 'Unconfigured'}
+            </span>
+          </div>
         </div>
       </div>
     </aside>

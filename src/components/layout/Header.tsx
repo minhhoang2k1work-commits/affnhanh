@@ -2,24 +2,27 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, ScanLine, ShieldCheck, Store, MonitorPlay } from 'lucide-react';
+import { Search, ScanLine, ShieldCheck, Zap } from 'lucide-react';
 
 export function Header() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
-  const [providerStatus, setProviderStatus] = useState<string>('API Active');
+  const [isExtConnected, setIsExtConnected] = useState<boolean>(false);
+
+  const fetchStatus = async () => {
+    try {
+      const res = await fetch('/api/health');
+      const data = await res.json();
+      setIsExtConnected(data.extension === 'connected');
+    } catch (err) {
+      setIsExtConnected(false);
+    }
+  };
 
   useEffect(() => {
-    fetch('/api/browser-session/status')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.connected) {
-          setProviderStatus('Shopee Browser ● Active');
-        } else {
-          setProviderStatus('Shopee API ● Active');
-        }
-      })
-      .catch(() => setProviderStatus('Shopee API ● Active'));
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 8000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -46,10 +49,16 @@ export function Header() {
 
       {/* Action Buttons & Status */}
       <div className="flex items-center gap-4">
-        {/* Active Provider Badge (Section 39) */}
-        <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/50 text-xs text-slate-300">
-          <MonitorPlay className="w-3.5 h-3.5 text-purple-400" />
-          <span className="font-semibold text-purple-300">{providerStatus}</span>
+        {/* Real Extension Connection Badge (Requirement 16) */}
+        <div
+          className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+            isExtConnected
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+              : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+          }`}
+        >
+          <span className={`w-2 h-2 rounded-full ${isExtConnected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
+          <span>Extension {isExtConnected ? '● Connected' : '○ Not Connected'}</span>
         </div>
 
         {/* Quick Shop Scanner CTA */}
@@ -58,7 +67,7 @@ export function Header() {
           className="flex items-center gap-2 px-4 py-2 rounded-xl gradient-shopee text-white font-medium text-xs shadow-glow hover:brightness-110 active:scale-95 transition-all"
         >
           <ScanLine className="w-4 h-4" />
-          <span>QUÉT SHOP MOI</span>
+          <span>QUÉT SHOP MỚI</span>
         </button>
 
         {/* Profile / Account Badge */}

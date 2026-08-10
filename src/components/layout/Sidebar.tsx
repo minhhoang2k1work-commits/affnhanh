@@ -11,6 +11,7 @@ import {
   FolderHeart, 
   Store, 
   KeyRound, 
+  Settings,
   Sparkles,
   Link2,
   TrendingUp,
@@ -58,6 +59,12 @@ const navItems = [
     name: 'Tài Khoản Affiliate',
     href: '/accounts',
     icon: KeyRound,
+  },
+  {
+    name: 'Cài Đặt Shopee',
+    href: '/settings/shopee',
+    icon: Settings,
+    badge: 'Status',
   },
 ];
 

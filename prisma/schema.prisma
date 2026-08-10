@@ -63,33 +63,38 @@ model Shop {
 }
 
 model Product {
-  id                 String              @id @default(uuid())
-  userId             String              @default("default-user-id")
-  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  platform           String              // "SHOPEE", "TIKTOK", "LAZADA"
-  shopId             String
-  shop               Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  externalProductId  String              // e.g., "98765432"
-  name               String
-  image              String
-  price              Float               // Base price in VND
-  salePrice          Float               // Discounted price in VND
-  sold               Int                 @default(0)
-  rating             Float               @default(5.0)
-  stock              Int                 @default(100)
-  originalUrl        String
-  category           String?
-  affiliateScore     Int                 @default(85) // Calculated Score (0-100)
-  hasAffiliate       Boolean             @default(true)
-  affiliateStatus    String              @default("pending") // pending, processing, success, not_eligible, pending_configuration, failed
-  commissionRate     Float               @default(5.0) // e.g., 5.5%
-  estCommission      Float               @default(0)   // Estimated commission in VND
-  isActive           Boolean             @default(true)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  affiliateLinks     AffiliateLink[]
-  collectionProducts CollectionProduct[]
-  videoProducts      VideoProduct[]
+  id                   String              @id @default(uuid())
+  userId               String              @default("default-user-id")
+  user                 User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform             String              // "SHOPEE", "TIKTOK", "LAZADA"
+  shopId               String
+  shop                 Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  externalProductId    String              // e.g., "98765432"
+  name                 String
+  image                String
+  price                Float               // Base price in VND
+  salePrice            Float               // Discounted price in VND
+  sold                 Int                 @default(0)
+  rating               Float               @default(5.0)
+  stock                Int                 @default(100)
+  originalUrl          String
+  category             String?
+  affiliateScore       Int                 @default(85) // Calculated Score (0-100)
+  hasAffiliate         Boolean             @default(true)
+  affiliateStatus      String              @default("pending") // pending, processing, success, not_eligible, pending_configuration, failed
+  baseCommissionRate   Float               @default(0) // e.g. 5.0 (%)
+  extraCommissionRate  Float               @default(0) // e.g. 3.0 (%) Xtra
+  totalCommissionRate  Float               @default(0) // base + extra (%)
+  commissionRate       Float               @default(0) // e.g. 8.0 (%)
+  commissionSource     String?             // e.g. "Shopee Affiliate GraphQL API", "Shopee Offer API", "Unprovided"
+  commissionUpdatedAt  DateTime?
+  estCommission        Float               @default(0) // Estimated commission in VND
+  isActive             Boolean             @default(true)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  affiliateLinks       AffiliateLink[]
+  collectionProducts   CollectionProduct[]
+  videoProducts        VideoProduct[]
 
   @@unique([platform, shopId, externalProductId])
   @@index([name])

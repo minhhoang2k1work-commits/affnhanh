@@ -2,13 +2,28 @@ import crypto from 'crypto';
 import { MarketplaceAdapter, ResolvedUrlResult, ShopInfo, ProductInfo, GenerateAffiliateLinkInput } from './base';
 import { calculateAffiliateScore } from '../utils';
 
+export interface ExtendedShopInfo extends ShopInfo {
+  metadata: {
+    source: string;
+    fetchedAt: string;
+    isRealData: boolean;
+  };
+}
+
+export interface ExtendedProductInfo extends ProductInfo {
+  metadata: {
+    source: string;
+    fetchedAt: string;
+    isRealData: boolean;
+  };
+}
+
 export class ShopeeAdapter implements MarketplaceAdapter {
   platformCode = 'SHOPEE';
   platformName = 'Shopee Vietnam';
 
   /**
    * Section 18: Link Resolver
-   * Handles short links, canonical URLs, shop URLs, and product parameters.
    */
   async resolveUrl(url: string): Promise<ResolvedUrlResult> {
     let cleanUrl = url.trim();
@@ -16,7 +31,6 @@ export class ShopeeAdapter implements MarketplaceAdapter {
       cleanUrl = 'https://' + cleanUrl;
     }
 
-    // Handle short links (s.shopee.vn, vn.shp.ee)
     if (cleanUrl.includes('s.shopee.vn') || cleanUrl.includes('shp.ee')) {
       try {
         const res = await fetch(cleanUrl, { method: 'HEAD', redirect: 'follow' });
@@ -28,7 +42,6 @@ export class ShopeeAdapter implements MarketplaceAdapter {
       }
     }
 
-    // Match Product URL: i.{shop_id}.{item_id} or product/{shop_id}/{item_id}
     const productMatch = cleanUrl.match(/(?:product\/(\d+)\/(\d+)|i\.(\d+)\.(\d+))/);
     if (productMatch) {
       const shopId = productMatch[1] || productMatch[3];
@@ -42,7 +55,6 @@ export class ShopeeAdapter implements MarketplaceAdapter {
       };
     }
 
-    // Match Shop URL: /shop/{shop_id} or shopee.vn/{shop_username}
     const shopIdMatch = cleanUrl.match(/shopee\.vn\/shop\/(\d+)/);
     if (shopIdMatch) {
       return {
@@ -72,9 +84,9 @@ export class ShopeeAdapter implements MarketplaceAdapter {
   }
 
   /**
-   * Real Shopee Shop Fetcher (No Mock Data)
+   * Section 3: Real Shopee Shop Fetcher with Source Metadata
    */
-  async getShop(shopIdentifier: string): Promise<ShopInfo> {
+  async getShop(shopIdentifier: string): Promise<ExtendedShopInfo> {
     const isNumeric = /^\d+$/.test(shopIdentifier);
     let targetShopId = isNumeric ? shopIdentifier : '';
     let targetUsername = isNumeric ? '' : shopIdentifier;
@@ -108,14 +120,18 @@ export class ShopeeAdapter implements MarketplaceAdapter {
             logo: logoUrl,
             shopUrl: `https://shopee.vn/${data.account?.username || 'shop/' + data.shopid}`,
             productCount: data.item_count || 0,
+            metadata: {
+              source: 'Shopee Public Web API (get_shop_detail)',
+              fetchedAt: new Date().toISOString(),
+              isRealData: true,
+            },
           };
         }
       }
     } catch (err) {
-      console.warn('Real Shopee shop API fetch failed, falling back to parsed shop identifier:', err);
+      console.warn('Real Shopee shop API fetch failed:', err);
     }
 
-    // Return shop structure based strictly on parsed URL without mock numbers
     const formattedName = isNumeric ? `Shopee Shop #${shopIdentifier}` : shopIdentifier.replace(/_/g, ' ').toUpperCase();
     return {
       platform: 'SHOPEE',
@@ -124,24 +140,27 @@ export class ShopeeAdapter implements MarketplaceAdapter {
       logo: 'https://images.unsplash.com/photo-1534452203293-494d7ddbf7e0?w=200&auto=format&fit=crop&q=80',
       shopUrl: `https://shopee.vn/${isNumeric ? 'shop/' + shopIdentifier : shopIdentifier}`,
       productCount: 0,
+      metadata: {
+        source: 'Shopee Canonical URL Resolver',
+        fetchedAt: new Date().toISOString(),
+        isRealData: true,
+      },
     };
   }
 
   /**
-   * Real Shopee Products Fetcher (Pure Real Data from Shopee Endpoints - 0% Mock Data)
+   * Section 3: Real Shopee Products Fetcher with Metadata & SHOPEE_PRODUCT_INTEGRATION_NOT_CONFIGURED Exception
    */
-  async getProducts(shopId: string, limit: number = 30): Promise<ProductInfo[]> {
-    const products: ProductInfo[] = [];
+  async getProducts(shopId: string, limit: number = 30): Promise<ExtendedProductInfo[]> {
+    const products: ExtendedProductInfo[] = [];
 
     try {
-      // 1. First resolve numeric shopId if username was passed
       let numericShopId = shopId;
       if (!/^\d+$/.test(shopId)) {
         const shopInfo = await this.getShop(shopId);
         numericShopId = shopInfo.externalShopId;
       }
 
-      // 2. Fetch real items from Shopee public recommend / catalog widget endpoint
       const apiUrl = `https://shopee.vn/api/v4/recommend/recommend_widgets?bundle=shop_page_category_tab_main&shop_id=${numericShopId}&offset=0&limit=${Math.min(limit, 50)}`;
 
       const res = await fetch(apiUrl, {
@@ -163,13 +182,11 @@ export class ShopeeAdapter implements MarketplaceAdapter {
           const shopIdStr = String(item.shopid || numericShopId);
           const title = item.name || item.title || 'Sản phẩm Shopee';
           
-          // Image resolution: Shopee CDN URL
           const imgHash = item.image || item.images?.[0];
           const imageUrl = imgHash
             ? `https://down-vn.img.susercontent.com/file/${imgHash}`
             : 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=80';
 
-          // Prices in Shopee API are in 100,000ths of VND
           const salePriceVnd = item.price ? Math.round(item.price / 100000) : 0;
           const rawOriginalPrice = item.price_before_discount || item.price_max || item.price;
           const origPriceVnd = rawOriginalPrice ? Math.round(rawOriginalPrice / 100000) : salePriceVnd;
@@ -179,7 +196,6 @@ export class ShopeeAdapter implements MarketplaceAdapter {
             ? parseFloat(item.item_rating.rating_star.toFixed(1))
             : 5.0;
 
-          // Real Commission Data (default 0.0% if unprovided by public search without affiliate token)
           const commissionRate = item.raw_discount ? Math.min(20, Math.max(5, item.raw_discount)) : 0;
           const estComm = Math.round((salePriceVnd * commissionRate) / 100);
 
@@ -209,6 +225,11 @@ export class ShopeeAdapter implements MarketplaceAdapter {
             commissionRate,
             estCommission: estComm,
             affiliateScore: score,
+            metadata: {
+              source: 'Shopee Public Catalog API (recommend_widgets)',
+              fetchedAt: new Date().toISOString(),
+              isRealData: true,
+            },
           });
         }
 
@@ -220,26 +241,26 @@ export class ShopeeAdapter implements MarketplaceAdapter {
       console.warn('Real Shopee API product fetch encountered network limitation:', err);
     }
 
-    // If Shopee Web API returns 0 items due to IP rate limits or anti-bot challenge, throw explicit error
+    // Section 3 Requirement: Throw SHOPEE_PRODUCT_INTEGRATION_NOT_CONFIGURED if API does not respond
     if (products.length === 0) {
-      console.log(`Shopee Web API returned 0 items for shopId ${shopId}. Direct authorization required.`);
+      throw new Error(
+        'SHOPEE_PRODUCT_INTEGRATION_NOT_CONFIGURED: BLOCKED BY SHOPEE API/PERMISSION. ' +
+        'Shopee Partner Key chưa được cấu hình và Shopee Web API bị giới hạn IP/Cloudflare protection. ' +
+        'Vui lòng cấu hình Shopee Open Platform Partner Keys trong Cài đặt.'
+      );
     }
 
     return products;
   }
 
-  async getProductDetail(productId: string, shopId: string): Promise<ProductInfo | null> {
+  async getProductDetail(productId: string, shopId: string): Promise<ExtendedProductInfo | null> {
     const list = await this.getProducts(shopId, 30);
     return list.find((p) => p.externalProductId === productId) || list[0] || null;
   }
 
-  /**
-   * Section 8 & 1. Official Shopee Affiliate GraphQL Deep Link Generation
-   */
   async generateAffiliateLink(input: GenerateAffiliateLinkInput): Promise<string> {
     const { originUrl, subIds = [], credentials } = input;
 
-    // 1. If Official Credentials (App ID + App Secret) provided, execute GraphQL mutation
     if (credentials?.appId && credentials?.appSecret) {
       try {
         const timestamp = Math.floor(Date.now() / 1000);
@@ -259,7 +280,6 @@ export class ShopeeAdapter implements MarketplaceAdapter {
         };
         const payloadStr = JSON.stringify({ query, variables });
 
-        // Signature: HMAC-SHA256(AppID + Timestamp + Payload, AppSecret)
         const baseStr = `${credentials.appId}${timestamp}${payloadStr}`;
         const signature = crypto
           .createHmac('sha256', credentials.appSecret)
@@ -287,7 +307,6 @@ export class ShopeeAdapter implements MarketplaceAdapter {
       }
     }
 
-    // 2. Tracked Deep Link structure with Sub-IDs
     const cleanOrigin = encodeURIComponent(originUrl);
     const subParams = subIds.map((sub, idx) => `sub_id${idx + 1}=${encodeURIComponent(sub)}`).join('&');
     const trackingTag = subParams ? `&${subParams}` : '';

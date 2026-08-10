@@ -1,0 +1,168 @@
+// Prisma Schema for Affiliate Product Link Hub
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id                String             @id @default(uuid())
+  email             String             @unique
+  name              String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  affiliateAccounts AffiliateAccount[]
+  collections       Collection[]
+  videos            Video[]
+  affiliateLinks    AffiliateLink[]
+}
+
+model AffiliateAccount {
+  id             String          @id @default(uuid())
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform       String          // e.g., "SHOPEE", "TIKTOK", "LAZADA"
+  accountName    String          // e.g., "Shopee Primary Account", "TikTok Seller Hub"
+  appId          String
+  appSecretEnc   String          // AES-256 encrypted
+  isDefault      Boolean         @default(false)
+  status         String          @default("ACTIVE") // ACTIVE, EXPIRED, ERROR
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  affiliateLinks AffiliateLink[]
+}
+
+model Shop {
+  id                 String     @id @default(uuid())
+  platform           String     // "SHOPEE", "TIKTOK", "LAZADA"
+  externalShopId     String     // e.g., "12345678"
+  name               String
+  logo               String?
+  shopUrl            String
+  isAutoSync         Boolean    @default(true)
+  productCount       Int        @default(0)
+  affProductCount    Int        @default(0)
+  status             String     @default("ACTIVE") // ACTIVE, PAUSED, ERROR
+  lastSyncedAt       DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  products           Product[]
+  syncJobs           SyncJob[]
+
+  @@unique([platform, externalShopId])
+}
+
+model Product {
+  id                 String              @id @default(uuid())
+  platform           String              // "SHOPEE", "TIKTOK", "LAZADA"
+  shopId             String
+  shop               Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  externalProductId  String              // e.g., "98765432"
+  name               String
+  image              String
+  price              Float               // Base price in VND
+  salePrice          Float               // Discounted price in VND
+  sold               Int                 @default(0)
+  rating             Float               @default(5.0)
+  stock              Int                 @default(100)
+  originalUrl        String
+  category           String?
+  affiliateScore     Int                 @default(85) // Calculated Score (0-100)
+  hasAffiliate       Boolean             @default(true)
+  commissionRate     Float               @default(5.0) // e.g., 5.5%
+  estCommission      Float               @default(0)   // Estimated commission in VND
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  affiliateLinks     AffiliateLink[]
+  collectionProducts CollectionProduct[]
+  videoProducts      VideoProduct[]
+
+  @@unique([platform, externalProductId])
+}
+
+model AffiliateLink {
+  id                 String           @id @default(uuid())
+  userId             String
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId          String
+  product            Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  affiliateAccountId String?
+  affiliateAccount   AffiliateAccount? @relation(fields: [affiliateAccountId], references: [id], onDelete: SetNull)
+  originalUrl        String
+  affiliateUrl       String
+  subId              String?
+  status             String           @default("ACTIVE")
+  clickCount         Int              @default(0)
+  orderCount         Int              @default(0)
+  totalCommission    Float            @default(0)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+}
+
+model Collection {
+  id          String              @id @default(uuid())
+  name        String
+  description String?
+  icon        String              @default("folder")
+  userId      String
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  products    CollectionProduct[]
+}
+
+model CollectionProduct {
+  id           String     @id @default(uuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  addedAt      DateTime   @default(now())
+
+  @@unique([collectionId, productId])
+}
+
+model Video {
+  id              String         @id @default(uuid())
+  title           String
+  platform        String         // "TIKTOK", "FACEBOOK", "SHOPEE_VIDEO", "YOUTUBE"
+  targetUrl       String?
+  note            String?
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clickCount      Int            @default(0)
+  orderCount      Int            @default(0)
+  totalCommission Float          @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  products        VideoProduct[]
+}
+
+model VideoProduct {
+  id           String   @id @default(uuid())
+  videoId      String
+  video        Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  subId        String   // e.g. "FB_V038_001"
+  affiliateUrl String
+  createdAt    DateTime @default(now())
+
+  @@unique([videoId, productId])
+}
+
+model SyncJob {
+  id             String    @id @default(uuid())
+  shopId         String
+  shop           Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  status         String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  totalFound     Int       @default(0)
+  totalAffiliate Int       @default(0)
+  errorMessage   String?
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+}

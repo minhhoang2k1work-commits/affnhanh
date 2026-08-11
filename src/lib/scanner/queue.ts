@@ -223,10 +223,11 @@ async function processSingleShopItem(
   // Create an ExtensionJob to trigger the Extension UI to open a tab and scan
   await db.extensionJob.create({
     data: {
+      userId: userId,
       type: 'SCAN_SHOP',
       targetUrl: resolvedShop.shopUrl,
       scanJobId: scanJobId, // Link it to the parent ScanJob
-      status: 'pending'
+      status: 'queued'
     }
   });
 

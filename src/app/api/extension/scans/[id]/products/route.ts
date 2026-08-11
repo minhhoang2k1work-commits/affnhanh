@@ -126,15 +126,38 @@ export async function POST(
     }
 
     // 3. Update ScanJob Total Count & Shop Count
+    const isExtensionOnly = scanJobId.startsWith('ext_');
+    const jobStatus = isExtensionOnly ? 'processing' : 'completed';
+
     const updatedJob = await db.scanJob.update({
       where: { id: scanJobId },
       data: {
         totalProducts: { increment: savedCount },
         processedProducts: { increment: savedCount },
         processedShops: dbShop ? 1 : scanJob.processedShops,
-        status: 'processing',
+        status: jobStatus,
+        progress: isExtensionOnly ? scanJob.progress : 100,
+        completedAt: isExtensionOnly ? null : new Date(),
       },
     });
+
+    if (!isExtensionOnly) {
+      // Mark ExtensionJob as completed
+      await db.extensionJob.updateMany({
+        where: { scanJobId: scanJobId, type: 'SCAN_SHOP' },
+        data: { status: 'completed' },
+      });
+
+      // Mark ScanJobItem as completed
+      await db.scanJobItem.updateMany({
+        where: { scanJobId: scanJobId },
+        data: { 
+          status: 'completed',
+          productCount: savedCount,
+          completedAt: new Date()
+        },
+      });
+    }
 
     if (dbShop && savedCount > 0) {
       await db.shop.update({

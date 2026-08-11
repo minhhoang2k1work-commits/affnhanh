@@ -219,134 +219,29 @@ async function processSingleShopItem(
     },
   });
 
-  // Step 2: Fetch Products (may return empty array if API is blocked)
-  let catalog: any[] = [];
-  try {
-    catalog = await adapter.getProducts(resolvedShop.externalShopId, 40);
-  } catch (err: any) {
-    console.warn(`[ScanQueue] getProducts failed for shop ${resolvedShop.name}:`, err?.message);
-    catalog = [];
-  }
-
-  // If no products fetched (API blocked by Cloudflare), still mark as completed with 0 products
-  if (catalog.length === 0) {
-    await db.shop.update({
-      where: { id: shopRecord.id },
-      data: { productCount: 0, affProductCount: 0 },
-    });
-
-    await db.scanJobItem.update({
-      where: { id: itemId },
-      data: {
-        status: 'completed',
-        productCount: 0,
-        affiliateSuccess: 0,
-        affiliateFailed: 0,
-        completedAt: new Date(),
-        errorMessage: 'Shop đã lưu thành công nhưng không lấy được danh sách sản phẩm từ Shopee API (bị Cloudflare chặn). Hãy sử dụng Chrome Extension để quét sản phẩm.',
-      },
-    });
-
-    return { productCount: 0, affiliateSuccess: 0, affiliateFailed: 0 };
-  }
-
-  // Step 3: Upsert Products & Generate Affiliate Links
-  await db.scanJobItem.update({
-    where: { id: itemId },
-    data: { status: 'generating_affiliate' },
-  });
-
-  let affSuccess = 0;
-  let affFailed = 0;
-
-  for (const prodInfo of catalog) {
-    const productRecord = await db.product.upsert({
-      where: {
-        platform_shopId_externalProductId: {
-          platform: prodInfo.platform,
-          shopId: shopRecord.id,
-          externalProductId: prodInfo.externalProductId,
-        },
-      },
-      update: {
-        name: prodInfo.name,
-        image: prodInfo.image,
-        price: prodInfo.price,
-        salePrice: prodInfo.salePrice,
-        sold: prodInfo.sold,
-        rating: prodInfo.rating,
-        stock: prodInfo.stock,
-        originalUrl: prodInfo.originalUrl,
-        category: prodInfo.category,
-        hasAffiliate: prodInfo.hasAffiliate,
-        commissionRate: prodInfo.commissionRate,
-        estCommission: prodInfo.estCommission,
-        affiliateScore: prodInfo.affiliateScore,
-        isActive: true,
-      },
-      create: {
-        userId,
-        platform: prodInfo.platform,
-        shopId: shopRecord.id,
-        externalProductId: prodInfo.externalProductId,
-        name: prodInfo.name,
-        image: prodInfo.image,
-        price: prodInfo.price,
-        salePrice: prodInfo.salePrice,
-        sold: prodInfo.sold,
-        rating: prodInfo.rating,
-        stock: prodInfo.stock,
-        originalUrl: prodInfo.originalUrl,
-        category: prodInfo.category,
-        hasAffiliate: prodInfo.hasAffiliate,
-        commissionRate: prodInfo.commissionRate,
-        estCommission: prodInfo.estCommission,
-        affiliateScore: prodInfo.affiliateScore,
-        affiliateStatus: prodInfo.hasAffiliate ? 'pending' : 'not_eligible',
-        isActive: true,
-      },
-    });
-
-    if (prodInfo.hasAffiliate) {
-      const affRes = await AffiliateLinkService.generateAffiliateLinkForProduct({
-        userId,
-        productId: productRecord.id,
-        subId: 'HUB_SCANNER',
-      });
-
-      if (affRes.status === 'success') {
-        affSuccess++;
-      } else {
-        affFailed++;
-      }
+  // Step 2: Delegate Product Fetching to Chrome Extension
+  // Create an ExtensionJob to trigger the Extension UI to open a tab and scan
+  await db.extensionJob.create({
+    data: {
+      type: 'SCAN_SHOP',
+      targetUrl: resolvedShop.shopUrl,
+      scanJobId: scanJobId, // Link it to the parent ScanJob
+      status: 'pending'
     }
-  }
-
-  // Update shop product counts
-  await db.shop.update({
-    where: { id: shopRecord.id },
-    data: {
-      productCount: catalog.length,
-      affProductCount: affSuccess,
-    },
   });
 
-  // Mark item completed
+  // Mark the item as queued for extension. The extension will complete it when done.
   await db.scanJobItem.update({
     where: { id: itemId },
     data: {
-      status: 'completed',
-      productCount: catalog.length,
-      affiliateSuccess: affSuccess,
-      affiliateFailed: affFailed,
-      completedAt: new Date(),
+      status: 'queued_for_extension',
+      errorMessage: 'Đang chờ Chrome Extension xử lý quét sản phẩm...',
     },
   });
 
-  return {
-    productCount: catalog.length,
-    affiliateSuccess: affSuccess,
-    affiliateFailed: affFailed,
-  };
+  // Return 0 for now; the actual counts will be updated when the Extension pushes data back
+  return { productCount: 0, affiliateSuccess: 0, affiliateFailed: 0 };
+
+
 }
 

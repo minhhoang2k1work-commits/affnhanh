@@ -149,6 +149,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           body: JSON.stringify({ progress, processedProducts }),
         });
       } catch (err) {}
+    } else if (message.action === 'CLOSE_TAB') {
+      if (sender.tab && sender.tab.id) {
+        chrome.tabs.remove(sender.tab.id).catch(() => {});
+      }
     } else if (message.action === 'SCAN_COMPLETE') {
       const { scanJobId } = message;
       try {

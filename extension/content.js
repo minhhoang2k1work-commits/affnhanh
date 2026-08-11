@@ -61,9 +61,16 @@
           document.getElementById('aff-hub-push').innerText = 'THÀNH CÔNG!';
           document.getElementById('aff-hub-push').style.background = '#3b82f6';
           window.pendingProducts = []; // clear after push
-          setTimeout(() => {
-            window.open('https://affnhanh.vercel.app/library', '_blank');
-          }, 1000);
+          
+          if (currentScanJobId && !currentScanJobId.startsWith('ext_')) {
+            // Automated background scan -> close tab
+            chrome.runtime.sendMessage({ action: 'CLOSE_TAB' });
+          } else {
+            // Manual scan -> open library
+            setTimeout(() => {
+              window.open('https://affnhanh.vercel.app/library', '_blank');
+            }, 1000);
+          }
         });
       } else {
         alert('Chưa có sản phẩm nào để đẩy!');
@@ -290,6 +297,17 @@
       scanJobId,
       totalFound: collectedProductKeys.size,
     });
+
+    // Auto-push if this scan was triggered by Web App Automation
+    if (scanJobId && !scanJobId.startsWith('ext_')) {
+      const pushEl = document.getElementById('aff-hub-push');
+      if (pushEl && window.pendingProducts && window.pendingProducts.length > 0) {
+        pushEl.click();
+      } else {
+        // If nothing to push, just close tab
+        chrome.runtime.sendMessage({ action: 'CLOSE_TAB' });
+      }
+    }
   }
 
   // Handle Extension Affiliate Helper (on affiliate.shopee.vn)

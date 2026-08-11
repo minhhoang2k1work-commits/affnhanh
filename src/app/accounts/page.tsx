@@ -214,6 +214,7 @@ export default function AccountsPage() {
                   onChange={(e) => setPlatform(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500"
                 >
+                  <option value="ACCESSTRADE">Accesstrade Publisher API</option>
                   <option value="SHOPEE">Shopee Affiliate Program</option>
                   <option value="TIKTOK">TikTok Shop Affiliate</option>
                   <option value="LAZADA">Lazada Affiliate Program</option>

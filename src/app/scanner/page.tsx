@@ -562,12 +562,36 @@ export default function ScannerPage() {
               </select>
             </div>
           </div>
-
           {/* SECTION 15: PRODUCT CARDS GRID */}
           {loadingProducts ? (
             <div className="text-center py-12 text-slate-500 text-xs">Đang tải sản phẩm của Shop...</div>
           ) : products.length === 0 ? (
-            <div className="text-center py-12 text-slate-500 text-xs">Không tìm thấy sản phẩm phù hợp.</div>
+            <div className="text-center py-12 space-y-4">
+              <ShoppingBag className="w-12 h-12 text-slate-600 mx-auto" />
+              <h3 className="font-bold text-white text-base">Chưa lấy được sản phẩm từ Shop này</h3>
+              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                Shopee API có thể đang bị Cloudflare bảo vệ hoặc giới hạn IP. Bạn có thể thử:
+              </p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                <button
+                  onClick={() => scannedShop && loadShopProducts(scannedShop.id)}
+                  className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-all flex items-center gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>THỬ LẠI</span>
+                </button>
+                <button
+                  onClick={handleResetScan}
+                  className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-all flex items-center gap-2"
+                >
+                  <ScanLine className="w-4 h-4" />
+                  <span>QUÉT SHOP KHÁC</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500 pt-2">
+                💡 Tip: Cài <strong className="text-purple-300">Chrome Extension</strong> (thư mục extension/) để quét sản phẩm trực tiếp từ trình duyệt của bạn — không bị Cloudflare chặn.
+              </p>
+            </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {products.map((p) => {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { ensureExtensionScanJob } from '@/lib/scanner/queue';
 
 export async function POST(
   req: NextRequest,
@@ -9,6 +10,11 @@ export async function POST(
     const scanJobId = params.id;
     const body = await req.json();
     const { errorMessage } = body;
+    
+    const scanJob = await ensureExtensionScanJob(scanJobId);
+    if (!scanJob) {
+       return NextResponse.json({ error: 'ScanJob không tồn tại.' }, { status: 404 });
+    }
 
     const job = await db.scanJob.update({
       where: { id: scanJobId },

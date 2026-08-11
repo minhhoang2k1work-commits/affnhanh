@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { ensureExtensionScanJob } from '@/lib/scanner/queue';
 
 export async function POST(
   req: NextRequest,
@@ -10,9 +11,7 @@ export async function POST(
     const body = await req.json();
     const { shop, products } = body;
 
-    const scanJob = await db.scanJob.findUnique({
-      where: { id: scanJobId },
-    });
+    const scanJob = await ensureExtensionScanJob(scanJobId);
 
     if (!scanJob) {
       return NextResponse.json({ error: 'ScanJob không tồn tại.' }, { status: 404 });

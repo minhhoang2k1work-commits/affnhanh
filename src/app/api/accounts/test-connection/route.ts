@@ -16,6 +16,25 @@ export async function POST(req: NextRequest) {
     if (accountId) {
       const acc = await db.affiliateAccount.findUnique({ where: { id: accountId } });
       if (!acc) return NextResponse.json({ error: 'Không tìm thấy tài khoản.' }, { status: 404 });
+      
+      if (acc.platform === 'ACCESSTRADE') {
+        const apiKey = decryptText(acc.appSecretEnc) || acc.appSecretEnc;
+        const testRes = await fetch('https://api.accesstrade.vn/v1/campaigns?limit=1', {
+          headers: { 'Authorization': `token ${apiKey}` }
+        });
+        if (testRes.ok) {
+          return NextResponse.json({
+            success: true,
+            message: 'Kết nối thành công! Accesstrade Open API đã xác thực API Key.',
+          });
+        } else {
+          return NextResponse.json({
+            success: false,
+            error: 'Xác thực API Key Accesstrade thất bại.',
+          }, { status: 400 });
+        }
+      }
+
       targetAppId = acc.appId;
       targetAppSecret = decryptText(acc.appSecretEnc);
     }

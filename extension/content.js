@@ -6,6 +6,71 @@
   let isScanning = false;
   let currentScanJobId = null;
   let collectedProductKeys = new Set();
+  
+  // -- UI WIDGET START --
+  let uiContainer = null;
+  let uiList = null;
+
+  function initScannerUI() {
+    if (document.getElementById('aff-hub-scanner-ui')) {
+      document.getElementById('aff-hub-list').innerHTML = '';
+      return;
+    }
+    
+    uiContainer = document.createElement('div');
+    uiContainer.id = 'aff-hub-scanner-ui';
+    uiContainer.style.cssText = `
+      position: fixed; bottom: 20px; right: 20px; width: 320px;
+      background: #0f172a; border: 1px solid #334155; border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 2147483647;
+      color: #f8fafc; font-family: sans-serif; overflow: hidden;
+      display: flex; flex-direction: column; max-height: 400px;
+    `;
+
+    const header = document.createElement('div');
+    header.style.cssText = `
+      padding: 12px; background: #1e293b; border-bottom: 1px solid #334155;
+      font-weight: bold; display: flex; justify-content: space-between; align-items: center;
+    `;
+    header.innerHTML = `
+      <span style="font-size: 13px;">⚡ AFF HUB - Đang quét</span>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <span id="aff-hub-count" style="background: #a855f7; color: white; padding: 2px 8px; border-radius: 10px; font-size: 10px;">0 SP</span>
+        <button id="aff-hub-close" style="background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 14px;">✕</button>
+      </div>
+    `;
+
+    uiList = document.createElement('div');
+    uiList.id = 'aff-hub-list';
+    uiList.style.cssText = `flex: 1; overflow-y: auto; padding: 8px;`;
+
+    uiContainer.appendChild(header);
+    uiContainer.appendChild(uiList);
+    document.body.appendChild(uiContainer);
+
+    document.getElementById('aff-hub-close').onclick = () => {
+      uiContainer.remove();
+      uiContainer = null;
+    };
+  }
+
+  function addProductToUI(product) {
+    if (!uiList) return;
+    const item = document.createElement('div');
+    item.style.cssText = `display: flex; gap: 8px; padding: 8px; border-bottom: 1px solid #1e293b; align-items: center;`;
+    item.innerHTML = `
+      <img src="${product.productImage}" style="width: 40px; height: 40px; border-radius: 4px; object-fit: cover; flex-shrink: 0;" />
+      <div style="flex: 1; min-width: 0;">
+        <div style="font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #e2e8f0;">${product.productName}</div>
+        <div style="font-size: 11px; color: #a855f7; font-weight: bold;">${product.salePrice.toLocaleString('vi-VN')}₫</div>
+      </div>
+    `;
+    uiList.prepend(item);
+    
+    const countEl = document.getElementById('aff-hub-count');
+    if (countEl) countEl.innerText = `${collectedProductKeys.size} SP`;
+  }
+  // -- UI WIDGET END --
 
   // Listen for messages from background script
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -118,7 +183,7 @@
           else soldCount = parseInt(sStr.replace(/\./g, ''), 10) || 0;
         }
 
-        newProducts.push({
+        const productObj = {
           productId,
           shopId: shopInfo.shopId,
           productName,
@@ -128,7 +193,10 @@
           soldCount,
           rating: 5.0,
           productUrl: fullUrl,
-        });
+        };
+        
+        addProductToUI(productObj);
+        newProducts.push(productObj);
       } catch (err) {}
     });
 
@@ -140,6 +208,8 @@
     if (isScanning) return;
     isScanning = true;
     collectedProductKeys.clear();
+    
+    initScannerUI();
 
     const shopInfo = extractShopInfo();
     console.log('[AFF HUB Content Script] Starting scan for shop:', shopInfo);

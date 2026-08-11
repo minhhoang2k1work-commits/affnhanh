@@ -47,10 +47,13 @@ export async function POST(
           },
         });
 
-        // Update product affiliate status
+        // Update product affiliate status and URL
         await db.product.update({
           where: { id: prod.id },
-          data: { affiliateStatus: 'success' },
+          data: { 
+            affiliateStatus: 'success',
+            affiliateUrl: affiliateUrl 
+          },
         });
       }
     }

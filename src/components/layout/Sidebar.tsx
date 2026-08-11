@@ -58,6 +58,13 @@ const navItems = [
     badge: 'Sync',
   },
   {
+    name: 'Accesstrade Hub',
+    href: '/accesstrade',
+    icon: Zap,
+    badge: 'API Live',
+    highlight: true,
+  },
+  {
     name: 'Tài Khoản Affiliate',
     href: '/accounts',
     icon: KeyRound,
@@ -74,19 +81,28 @@ export function Sidebar() {
   const pathname = usePathname();
   const [dbStatus, setDbStatus] = useState<'connected' | 'error' | 'checking'>('checking');
   const [affStatus, setAffStatus] = useState<boolean>(false);
+  const [extStatus, setExtStatus] = useState<string>('not_connected');
 
   useEffect(() => {
-    // Real DB Health Check (Section 5 & Task 8)
-    fetch('/api/health/database')
+    // Real DB Health Check & Extension Health Check
+    fetch('/api/health')
       .then((res) => res.json())
       .then((data) => {
-        if (data.status === 'connected') {
+        if (data.database === 'connected') {
           setDbStatus('connected');
         } else {
           setDbStatus('error');
         }
+        if (data.extension === 'connected') {
+          setExtStatus('connected');
+        } else {
+          setExtStatus('not_connected');
+        }
       })
-      .catch(() => setDbStatus('error'));
+      .catch(() => {
+        setDbStatus('error');
+        setExtStatus('not_connected');
+      });
 
     fetch('/api/dashboard/summary')
       .then((res) => res.json())

@@ -149,42 +149,102 @@ export class ShopeeAdapter implements MarketplaceAdapter {
   }
 
   /**
-   * Section 3: Real Shopee Products Fetcher with Metadata & SHOPEE_PRODUCT_INTEGRATION_NOT_CONFIGURED Exception
+   * Section 3: Real Shopee Products Fetcher
+   * Multi-endpoint fallback: search_items → recommend_widgets → shop_rcmd_items
+   * Returns empty array (instead of throwing) when all APIs are blocked.
    */
   async getProducts(shopId: string, limit: number = 30): Promise<ExtendedProductInfo[]> {
-    const products: ExtendedProductInfo[] = [];
+    let numericShopId = shopId;
+    if (!/^\d+$/.test(shopId)) {
+      const shopInfo = await this.getShop(shopId);
+      numericShopId = shopInfo.externalShopId;
+    }
 
-    try {
-      let numericShopId = shopId;
-      if (!/^\d+$/.test(shopId)) {
-        const shopInfo = await this.getShop(shopId);
-        numericShopId = shopInfo.externalShopId;
-      }
+    // If still not numeric after resolution, we can't query Shopee API
+    if (!/^\d+$/.test(numericShopId)) {
+      console.warn(`[ShopeeAdapter] Could not resolve numeric shop ID for: ${shopId}`);
+      return [];
+    }
 
-      const apiUrl = `https://shopee.vn/api/v4/recommend/recommend_widgets?bundle=shop_page_category_tab_main&shop_id=${numericShopId}&offset=0&limit=${Math.min(limit, 50)}`;
+    const commonHeaders: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      'Accept': 'application/json',
+      'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+      'Referer': `https://shopee.vn/shop/${numericShopId}`,
+      'sec-ch-ua': '"Chromium";v="126", "Google Chrome";v="126", "Not-A.Brand";v="8"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'same-origin',
+    };
 
-      const res = await fetch(apiUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'application/json',
-          'Referer': `https://shopee.vn/shop/${numericShopId}`,
-        },
-      });
+    const capLimit = Math.min(limit, 50);
 
-      if (res.ok) {
+    // Endpoint strategies (ordered by reliability)
+    const endpoints = [
+      {
+        name: 'search_items',
+        url: `https://shopee.vn/api/v4/search/search_items?by=pop&limit=${capLimit}&match_id=${numericShopId}&newest=0&order=desc&page_type=shop&scenario=PAGE_OTHERS&version=2`,
+        extractItems: (json: any) => json?.items || json?.data?.items || [],
+        extractItem: (wrapper: any) => wrapper?.item_basic || wrapper,
+      },
+      {
+        name: 'recommend_widgets',
+        url: `https://shopee.vn/api/v4/recommend/recommend_widgets?bundle=shop_page_category_tab_main&shop_id=${numericShopId}&offset=0&limit=${capLimit}`,
+        extractItems: (json: any) => json?.data?.sections?.[0]?.data?.item || json?.data?.items || [],
+        extractItem: (item: any) => item,
+      },
+      {
+        name: 'shop_rcmd_items',
+        url: `https://shopee.vn/api/v4/recommend/recommend?bundle=shop_page_product_tab_main&limit=${capLimit}&offset=0&shop_id=${numericShopId}`,
+        extractItems: (json: any) => json?.data?.sections?.[0]?.data?.item || json?.data?.items || [],
+        extractItem: (item: any) => item,
+      },
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`[ShopeeAdapter] Trying endpoint: ${endpoint.name} for shop ${numericShopId}`);
+        
+        const res = await fetch(endpoint.url, {
+          headers: commonHeaders,
+          signal: AbortSignal.timeout(15000),
+        });
+
+        if (!res.ok) {
+          console.warn(`[ShopeeAdapter] ${endpoint.name} returned status ${res.status}`);
+          continue;
+        }
+
+        // Check if response is JSON (Cloudflare returns HTML)
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          console.warn(`[ShopeeAdapter] ${endpoint.name} returned non-JSON (likely Cloudflare block)`);
+          continue;
+        }
+
         const json = await res.json();
-        const rawItems = json?.data?.sections?.[0]?.data?.item || json?.data?.items || [];
+        const rawItems = endpoint.extractItems(json);
 
-        for (const item of rawItems) {
-          if (!item.itemid) continue;
+        if (!Array.isArray(rawItems) || rawItems.length === 0) {
+          console.warn(`[ShopeeAdapter] ${endpoint.name} returned 0 items`);
+          continue;
+        }
+
+        // Successfully got items — parse them
+        const products: ExtendedProductInfo[] = [];
+        for (const rawWrapper of rawItems) {
+          const item = endpoint.extractItem(rawWrapper);
+          if (!item || !item.itemid) continue;
 
           const prodId = String(item.itemid);
           const shopIdStr = String(item.shopid || numericShopId);
           const title = item.name || item.title || 'Sản phẩm Shopee';
-          
+
           const imgHash = item.image || item.images?.[0];
           const imageUrl = imgHash
-            ? `https://down-vn.img.susercontent.com/file/${imgHash}`
+            ? (imgHash.startsWith('http') ? imgHash : `https://down-vn.img.susercontent.com/file/${imgHash}`)
             : 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=80';
 
           const salePriceVnd = item.price ? Math.round(item.price / 100000) : 0;
@@ -194,10 +254,12 @@ export class ShopeeAdapter implements MarketplaceAdapter {
           const soldCount = item.historical_sold || item.sold || 0;
           const ratingStar = item.item_rating?.rating_star
             ? parseFloat(item.item_rating.rating_star.toFixed(1))
-            : 5.0;
+            : (item.rating_star ? parseFloat(Number(item.rating_star).toFixed(1)) : 0);
 
-          const commissionRate = item.raw_discount ? Math.min(20, Math.max(5, item.raw_discount)) : 0;
-          const estComm = Math.round((salePriceVnd * commissionRate) / 100);
+          // Commission rate is NOT available from public API.
+          // raw_discount is discount %, not commission. Set 0 until Affiliate API provides real data.
+          const commissionRate = 0;
+          const estComm = 0;
 
           const score = calculateAffiliateScore({
             sold: soldCount,
@@ -226,7 +288,7 @@ export class ShopeeAdapter implements MarketplaceAdapter {
             estCommission: estComm,
             affiliateScore: score,
             metadata: {
-              source: 'Shopee Public Catalog API (recommend_widgets)',
+              source: `Shopee Public API (${endpoint.name})`,
               fetchedAt: new Date().toISOString(),
               isRealData: true,
             },
@@ -234,23 +296,21 @@ export class ShopeeAdapter implements MarketplaceAdapter {
         }
 
         if (products.length > 0) {
+          console.log(`[ShopeeAdapter] ✓ Got ${products.length} products from ${endpoint.name}`);
           return products;
         }
+      } catch (err: any) {
+        console.warn(`[ShopeeAdapter] ${endpoint.name} failed:`, err?.message || err);
+        continue;
       }
-    } catch (err) {
-      console.warn('Real Shopee API product fetch encountered network limitation:', err);
     }
 
-    // Section 3 Requirement: Throw SHOPEE_PRODUCT_INTEGRATION_NOT_CONFIGURED if API does not respond
-    if (products.length === 0) {
-      throw new Error(
-        'SHOPEE_PRODUCT_INTEGRATION_NOT_CONFIGURED: BLOCKED BY SHOPEE API/PERMISSION. ' +
-        'Shopee Partner Key chưa được cấu hình và Shopee Web API bị giới hạn IP/Cloudflare protection. ' +
-        'Vui lòng cấu hình Shopee Open Platform Partner Keys trong Cài đặt.'
-      );
-    }
-
-    return products;
+    // All endpoints failed — return empty array with console warning
+    console.warn(
+      `[ShopeeAdapter] All API endpoints blocked/failed for shop ${numericShopId}. ` +
+      'Shopee Cloudflare protection likely active. User should use Chrome Extension fallback.'
+    );
+    return [];
   }
 
   async getProductDetail(productId: string, shopId: string): Promise<ExtendedProductInfo | null> {

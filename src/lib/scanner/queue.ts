@@ -6,6 +6,30 @@ import { validateShopUrl } from './url';
 const activeRunners = new Set<string>();
 
 /**
+ * Ensures a ScanJob exists. If it doesn't and the ID starts with 'ext_', 
+ * it auto-creates one to support standalone scanning from the Chrome Extension.
+ */
+export async function ensureExtensionScanJob(scanJobId: string): Promise<any> {
+  let job = await db.scanJob.findUnique({ where: { id: scanJobId } });
+  
+  if (!job && scanJobId.startsWith('ext_')) {
+    const user = await db.user.findFirst();
+    if (user) {
+      job = await db.scanJob.create({
+        data: {
+          id: scanJobId,
+          userId: user.id,
+          source: 'extension',
+          type: 'SINGLE',
+          status: 'processing',
+        }
+      });
+    }
+  }
+  return job;
+}
+
+/**
  * Section 11, 28, 29, 30, 31: Background Job Queue Engine
  * Handles asynchronous scan execution, concurrency limit (3 shops), rate limiting, retries, and cancellation check.
  */
@@ -195,8 +219,36 @@ async function processSingleShopItem(
     },
   });
 
-  // Step 2: Fetch Products
-  const catalog = await adapter.getProducts(resolvedShop.externalShopId, 40);
+  // Step 2: Fetch Products (may return empty array if API is blocked)
+  let catalog: any[] = [];
+  try {
+    catalog = await adapter.getProducts(resolvedShop.externalShopId, 40);
+  } catch (err: any) {
+    console.warn(`[ScanQueue] getProducts failed for shop ${resolvedShop.name}:`, err?.message);
+    catalog = [];
+  }
+
+  // If no products fetched (API blocked by Cloudflare), still mark as completed with 0 products
+  if (catalog.length === 0) {
+    await db.shop.update({
+      where: { id: shopRecord.id },
+      data: { productCount: 0, affProductCount: 0 },
+    });
+
+    await db.scanJobItem.update({
+      where: { id: itemId },
+      data: {
+        status: 'completed',
+        productCount: 0,
+        affiliateSuccess: 0,
+        affiliateFailed: 0,
+        completedAt: new Date(),
+        errorMessage: 'Shop đã lưu thành công nhưng không lấy được danh sách sản phẩm từ Shopee API (bị Cloudflare chặn). Hãy sử dụng Chrome Extension để quét sản phẩm.',
+      },
+    });
+
+    return { productCount: 0, affiliateSuccess: 0, affiliateFailed: 0 };
+  }
 
   // Step 3: Upsert Products & Generate Affiliate Links
   await db.scanJobItem.update({
@@ -297,3 +349,4 @@ async function processSingleShopItem(
     affiliateFailed: affFailed,
   };
 }
+

@@ -8,7 +8,11 @@ const globalForPrisma = globalThis as unknown as {
 function getDatabaseUrl() {
   const envUrl = process.env.DATABASE_URL || 'file:./prisma/dev.db';
   if (envUrl.startsWith('file:')) {
-    const filePath = envUrl.replace('file:', '');
+    let filePath = envUrl.replace('file:', '');
+    // Fix: Prisma CLI resolves file:./dev.db to prisma/dev.db, so runtime must match it
+    if (filePath === './dev.db') {
+      filePath = './prisma/dev.db';
+    }
     if (!path.isAbsolute(filePath)) {
       const absPath = path.resolve(process.cwd(), filePath);
       return `file:${absPath.replace(/\\/g, '/')}`;

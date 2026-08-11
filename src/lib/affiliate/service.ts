@@ -45,16 +45,27 @@ export class AffiliateLinkService {
       },
     });
 
-    // Section 10: If no affiliate account configured
+    // Section 10: If no affiliate account configured, fallback to Extension Automation
     if (!defaultAccount) {
       await db.product.update({
         where: { id: productId },
-        data: { affiliateStatus: 'pending_configuration' },
+        data: { affiliateStatus: 'pending' },
+      });
+
+      // Queue a job for the extension to handle via DOM automation
+      await db.extensionJob.create({
+        data: {
+          userId,
+          type: 'GENERATE_AFFILIATE_LINK',
+          productId: product.id,
+          payload: JSON.stringify({ productUrl: product.originalUrl }),
+          status: 'queued',
+        }
       });
 
       return {
-        status: 'pending_configuration',
-        errorMessage: 'Shop đã được quét thành công nhưng bạn chưa cấu hình tài khoản Affiliate.',
+        status: 'success',
+        errorMessage: 'Đã gửi yêu cầu tạo link cho Extension. Vui lòng đợi trong giây lát...',
       };
     }
 

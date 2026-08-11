@@ -105,10 +105,14 @@ export default function ShopsPage() {
                     <img src={shop.logo || 'https://images.unsplash.com/photo-1534452203293-494d7ddbf7e0?w=100'} alt={shop.name} className="w-12 h-12 rounded-xl object-cover bg-slate-900 border border-slate-800" />
                     <div>
                       <h3 className="font-bold text-white text-base line-clamp-1">{shop.name}</h3>
-                      <div className="flex items-center gap-1.5 text-[11px] text-purple-300">
-                        <span>{shop.platform}</span>
-                        <span>•</span>
+                      <div className="flex items-center gap-1.5 text-[11px] text-purple-300 mt-0.5">
+                        <span className="px-1.5 py-0.5 bg-purple-500/20 rounded-md">{shop.platform}</span>
                         <span>ID: {shop.externalShopId}</span>
+                        {shop.shopUrl && (
+                          <a href={shop.shopUrl} target="_blank" rel="noopener noreferrer" className="ml-1 text-slate-400 hover:text-white transition-colors" title="Mở Link Shop gốc">
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
                       </div>
                     </div>
                   </div>

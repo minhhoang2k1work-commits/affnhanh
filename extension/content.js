@@ -36,6 +36,7 @@
       <span style="font-size: 13px;">⚡ AFF HUB - Đang quét</span>
       <div style="display: flex; gap: 8px; align-items: center;">
         <span id="aff-hub-count" style="background: #a855f7; color: white; padding: 2px 8px; border-radius: 10px; font-size: 10px;">0 SP</span>
+        <button id="aff-hub-push" style="background: #10b981; border: none; color: white; padding: 3px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; font-weight: bold;">ĐẨY DỮ LIỆU</button>
         <button id="aff-hub-close" style="background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 14px;">✕</button>
       </div>
     `;
@@ -47,6 +48,27 @@
     uiContainer.appendChild(header);
     uiContainer.appendChild(uiList);
     document.body.appendChild(uiContainer);
+
+    document.getElementById('aff-hub-push').onclick = () => {
+      if (window.pendingProducts && window.pendingProducts.length > 0) {
+        document.getElementById('aff-hub-push').innerText = 'ĐANG ĐẨY...';
+        chrome.runtime.sendMessage({
+          action: 'PRODUCTS_BATCH',
+          scanJobId: currentScanJobId || 'ext_' + Date.now(),
+          shop: window.currentShopInfo || { shopId: 'manual', name: 'Manual Scan' },
+          products: window.pendingProducts,
+        }, (res) => {
+          document.getElementById('aff-hub-push').innerText = 'THÀNH CÔNG!';
+          document.getElementById('aff-hub-push').style.background = '#3b82f6';
+          window.pendingProducts = []; // clear after push
+          setTimeout(() => {
+            window.open('https://affnhanh.vercel.app/library', '_blank');
+          }, 1000);
+        });
+      } else {
+        alert('Chưa có sản phẩm nào để đẩy!');
+      }
+    };
 
     document.getElementById('aff-hub-close').onclick = () => {
       uiContainer.remove();
@@ -69,6 +91,9 @@
     
     const countEl = document.getElementById('aff-hub-count');
     if (countEl) countEl.innerText = `${collectedProductKeys.size} SP`;
+    
+    const pushEl = document.getElementById('aff-hub-push');
+    if (pushEl) pushEl.innerText = `ĐẨY ${window.pendingProducts?.length || 0} SP`;
   }
   // -- UI WIDGET END --
 
@@ -214,6 +239,9 @@
     const shopInfo = extractShopInfo();
     console.log('[AFF HUB Content Script] Starting scan for shop:', shopInfo);
 
+    window.currentShopInfo = shopInfo;
+    window.pendingProducts = window.pendingProducts || [];
+
     let scrollAttempts = 0;
     let consecutiveNoNewItems = 0;
     const MAX_SCROLLS = 25;
@@ -232,13 +260,12 @@
         consecutiveNoNewItems = 0;
         console.log(`[AFF HUB] Batch found: ${batch.length} products (Total: ${collectedProductKeys.size})`);
 
-        // Send batch to background
-        chrome.runtime.sendMessage({
-          action: 'PRODUCTS_BATCH',
-          scanJobId,
-          shop: shopInfo,
-          products: batch,
-        });
+        // Add to pending products instead of pushing immediately
+        window.pendingProducts.push(...batch);
+        
+        // Update the button text to show how many products are ready to push
+        const pushEl = document.getElementById('aff-hub-push');
+        if (pushEl) pushEl.innerText = `ĐẨY ${window.pendingProducts.length} SP`;
 
         // Send progress
         const progressPercent = Math.min(95, Math.round((collectedProductKeys.size / MAX_PRODUCTS) * 100));

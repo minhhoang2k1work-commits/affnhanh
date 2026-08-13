@@ -1,5 +1,11 @@
 import { PrismaClient } from '@prisma/client';
-import path from 'path';
+
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = 'postgres://postgres.ugwpcxhowvtxhinizlgz:c9yUKCHv6fWGuEHG@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require&pgbouncer=true';
+}
+if (!process.env.DIRECT_URL) {
+  process.env.DIRECT_URL = 'postgres://postgres.ugwpcxhowvtxhinizlgz:c9yUKCHv6fWGuEHG@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require';
+}
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;

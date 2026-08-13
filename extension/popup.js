@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (serverSelect) {
     serverSelect.addEventListener('change', async (e) => {
       const selectedUrl = e.target.value;
-      await chrome.storage.local.set({ serverUrl: selectedUrl });
+      await chrome.storage.local.set({ serverUrl: selectedUrl, userSetServer: true });
       chrome.runtime.sendMessage({ action: 'GET_STATUS' });
     });
   }

@@ -5,9 +5,10 @@ let activeScanJob = null;
 
 // Get stored config or defaults
 async function getConfig() {
-  const data = await chrome.storage.local.get(['serverUrl', 'deviceToken']);
+  const data = await chrome.storage.local.get(['serverUrl', 'deviceToken', 'userSetServer']);
+  const serverUrl = data.userSetServer ? (data.serverUrl || DEFAULT_SERVER) : DEFAULT_SERVER;
   return {
-    serverUrl: data.serverUrl || DEFAULT_SERVER,
+    serverUrl,
     deviceToken: data.deviceToken || null,
   };
 }

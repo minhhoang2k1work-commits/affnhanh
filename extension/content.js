@@ -58,18 +58,28 @@
           shop: window.currentShopInfo || { shopId: 'manual', name: 'Manual Scan' },
           products: window.pendingProducts,
         }, (res) => {
-          document.getElementById('aff-hub-push').innerText = 'THÀNH CÔNG!';
-          document.getElementById('aff-hub-push').style.background = '#3b82f6';
-          window.pendingProducts = []; // clear after push
-          
-          if (currentScanJobId && !currentScanJobId.startsWith('ext_')) {
-            // Automated background scan -> close tab
-            chrome.runtime.sendMessage({ action: 'CLOSE_TAB' });
+          const pushBtn = document.getElementById('aff-hub-push');
+          if (res && res.success) {
+            pushBtn.innerText = 'THÀNH CÔNG!';
+            pushBtn.style.background = '#3b82f6';
+            window.pendingProducts = []; // clear after push
+            
+            if (currentScanJobId && !currentScanJobId.startsWith('ext_')) {
+              // Automated background scan -> close tab
+              chrome.runtime.sendMessage({ action: 'CLOSE_TAB' });
+            } else {
+              // Manual scan -> open library using stored serverUrl
+              chrome.runtime.sendMessage({ action: 'GET_SERVER_URL' }, (urlRes) => {
+                const targetServer = urlRes?.serverUrl || 'https://affnhanh.vercel.app';
+                setTimeout(() => {
+                  window.open(`${targetServer}/library`, '_blank');
+                }, 1000);
+              });
+            }
           } else {
-            // Manual scan -> open library
-            setTimeout(() => {
-              window.open('https://affnhanh.vercel.app/library', '_blank');
-            }, 1000);
+            pushBtn.innerText = 'LỖI ĐẨY DỮ LIỆU!';
+            pushBtn.style.background = '#ef4444';
+            alert(`Không thể đẩy dữ liệu lên Server: ${res?.error || 'Lỗi không xác định'}`);
           }
         });
       } else {

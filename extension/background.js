@@ -136,10 +136,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           body: JSON.stringify({ shop, products }),
         });
         const data = await res.json();
-        sendResponse({ success: true, data });
+        if (!res.ok || data.error) {
+          sendResponse({ success: false, error: data.error || `HTTP ${res.status}` });
+        } else {
+          sendResponse({ success: true, data });
+        }
       } catch (err) {
         sendResponse({ success: false, error: err.message });
       }
+    } else if (message.action === 'GET_SERVER_URL') {
+      sendResponse({ serverUrl });
     } else if (message.action === 'SCAN_PROGRESS') {
       const { scanJobId, progress, processedProducts } = message;
       try {

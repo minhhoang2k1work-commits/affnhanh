@@ -1,4 +1,4 @@
-import { db } from '../db';
+import { db, getOrCreateUser } from '../db';
 import { getAdapter } from '../adapters';
 import { AffiliateLinkService } from '../affiliate/service';
 import { validateShopUrl } from './url';
@@ -13,18 +13,16 @@ export async function ensureExtensionScanJob(scanJobId: string): Promise<any> {
   let job = await db.scanJob.findUnique({ where: { id: scanJobId } });
   
   if (!job && scanJobId.startsWith('ext_')) {
-    const user = await db.user.findFirst();
-    if (user) {
-      job = await db.scanJob.create({
-        data: {
-          id: scanJobId,
-          userId: user.id,
-          source: 'extension',
-          type: 'SINGLE',
-          status: 'processing',
-        }
-      });
-    }
+    const user = await getOrCreateUser();
+    job = await db.scanJob.create({
+      data: {
+        id: scanJobId,
+        userId: user.id,
+        source: 'extension',
+        type: 'SINGLE',
+        status: 'processing',
+      }
+    });
   }
   return job;
 }

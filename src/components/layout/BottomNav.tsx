@@ -7,7 +7,7 @@ import {
   LayoutDashboard, 
   ScanLine, 
   ShoppingBag, 
-  Zap, 
+  Link2,
   Menu 
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -37,9 +37,9 @@ export function BottomNav({ onOpenMobileMenu }: BottomNavProps) {
       isSpecial: true,
     },
     {
-      name: 'Accesstrade',
-      href: '/accesstrade',
-      icon: Zap,
+      name: 'Tạo Link',
+      href: '/link-generator',
+      icon: Link2,
     },
   ];
 

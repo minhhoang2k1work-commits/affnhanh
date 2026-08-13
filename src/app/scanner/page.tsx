@@ -24,7 +24,8 @@ import {
   Zap,
   Star,
   CheckSquare,
-  Square
+  Square,
+  X
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import * as XLSX from 'xlsx';
@@ -319,7 +320,7 @@ export default function ScannerPage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 pb-12">
+    <div className="max-w-6xl mx-auto space-y-8 pb-20">
       {/* Toast Notification */}
       {toastMsg && (
         <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-50 px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-xs shadow-2xl flex items-center gap-2 animate-bounce max-w-[90vw]">
@@ -514,6 +515,26 @@ export default function ScannerPage() {
             </div>
           </div>
 
+          {/* Quick Stats Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-center">
+              <div className="text-lg font-extrabold text-white">{scannedShop.productCount}</div>
+              <div className="text-[11px] text-slate-400">Sản Phẩm</div>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-center">
+              <div className="text-lg font-extrabold text-emerald-400">{scannedShop.affProductCount}</div>
+              <div className="text-[11px] text-slate-400">Có Affiliate</div>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-center">
+              <div className="text-lg font-extrabold text-amber-300">{scannedShop.maxCommissionRate > 0 ? `${scannedShop.maxCommissionRate}%` : '—'}</div>
+              <div className="text-[11px] text-slate-400">HH Cao Nhất</div>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-center">
+              <div className="text-lg font-extrabold text-purple-300">{products.filter(p => p.affiliateUrl).length}</div>
+              <div className="text-[11px] text-slate-400">Link Sẵn Sàng</div>
+            </div>
+          </div>
+
           {/* SECTION 13 & 14: IN-SCANNER SEARCH BAR & FILTERS */}
           <div className="space-y-4">
             <div className="relative">
@@ -523,15 +544,23 @@ export default function ScannerPage() {
                 value={inScannerQuery}
                 onChange={(e) => setInScannerQuery(e.target.value)}
                 placeholder={`Tìm trong ${products.length} sản phẩm của shop... (bình nước, nồi chiên...)`}
-                className="w-full bg-slate-950/90 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-all"
+                className="w-full bg-slate-950/90 border border-slate-800 rounded-xl pl-10 pr-10 py-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-all"
               />
+              {inScannerQuery && (
+                <button
+                  onClick={() => setInScannerQuery('')}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
             {/* Filter Tabs & Sort */}
             <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
               <div className="flex flex-wrap items-center gap-1.5">
                 {[
-                  { id: 'all', label: 'Tất Cả' },
+                  { id: 'all', label: `Tất Cả (${products.length})` },
                   { id: 'eligible', label: 'Có Hoa Hồng' },
                   { id: 'comm_5', label: 'Hoa Hồng > 5%' },
                   { id: 'comm_10', label: 'Hoa Hồng > 10%' },
@@ -557,6 +586,7 @@ export default function ScannerPage() {
                 <option value="score">Sắp xếp: Affiliate Score</option>
                 <option value="commissionRate">Hoa hồng cao nhất</option>
                 <option value="sold">Bán chạy nhất</option>
+                <option value="newest">Mới cập nhật</option>
                 <option value="price_asc">Giá tăng dần</option>
                 <option value="price_desc">Giá giảm dần</option>
               </select>
@@ -564,7 +594,16 @@ export default function ScannerPage() {
           </div>
           {/* SECTION 15: PRODUCT CARDS GRID */}
           {loadingProducts ? (
-            <div className="text-center py-12 text-slate-500 text-xs">Đang tải sản phẩm của Shop...</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {[...Array(8)].map((_, i) => (
+                <div key={i} className="glass-card p-4 rounded-2xl space-y-3 animate-pulse border border-slate-800/80">
+                  <div className="aspect-[4/5] rounded-xl bg-slate-800" />
+                  <div className="h-4 bg-slate-800 rounded-lg w-3/4" />
+                  <div className="h-3 bg-slate-800 rounded-lg w-1/2" />
+                  <div className="h-10 bg-slate-800 rounded-xl" />
+                </div>
+              ))}
+            </div>
           ) : products.length === 0 ? (
             <div className="text-center py-12 space-y-4">
               <ShoppingBag className="w-12 h-12 text-slate-600 mx-auto" />
@@ -609,28 +648,32 @@ export default function ScannerPage() {
                     />
 
                     {/* Image & Badges */}
-                    <div className="relative aspect-square overflow-hidden rounded-xl bg-slate-900 mb-3">
+                    <div className="relative aspect-[4/5] overflow-hidden rounded-xl bg-slate-900 mb-3">
                       <img src={p.image} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                       
                       {/* Commission Tier Badge (Section 16) */}
                       <div className="absolute top-2 right-2 z-10">
                         {renderCommissionBadge(p.commissionRate)}
                       </div>
+                      
+                      {/* Sold Badge */}
+                      <div className="absolute bottom-2 right-2 z-10 px-2 py-0.5 rounded-full bg-slate-900/80 text-white font-semibold text-[10px] backdrop-blur-sm">
+                        Đã bán {formatNumber(p.sold)}
+                      </div>
                     </div>
 
                     {/* Content */}
                     <div className="space-y-2 flex-1 flex flex-col justify-between">
                       <div className="space-y-1">
-                        <h3 className="text-xs font-bold text-white line-clamp-2 leading-relaxed" title={p.name}>{p.name}</h3>
+                        <h3 className="text-xs font-bold text-white line-clamp-2 leading-relaxed min-h-[2.5rem]" title={p.name}>{p.name}</h3>
                         <div className="flex items-center justify-between text-[11px] text-slate-400">
                           <span className="text-emerald-400 font-extrabold text-sm">{formatCurrency(p.salePrice)}</span>
-                          <span>Đã bán {formatNumber(p.sold)}</span>
                         </div>
                       </div>
 
                       {/* Section 5: Estimated Commission */}
-                      <div className="p-2 rounded-xl bg-slate-950 border border-slate-800 text-[11px] flex items-center justify-between">
-                        <span className="text-slate-400">Hoa hồng ước tính:</span>
+                      <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-[11px] flex items-center justify-between">
+                        <span className="text-emerald-200/70">Hoa hồng ước tính:</span>
                         <span className="text-emerald-400 font-extrabold">~{formatCurrency(estComm)} / đơn</span>
                       </div>
 
@@ -639,7 +682,7 @@ export default function ScannerPage() {
                         <button
                           onClick={() => handleGetOrCopyLink(p)}
                           disabled={isGenerating}
-                          className={`w-full py-2.5 rounded-xl font-extrabold text-xs shadow-glow transition-all flex items-center justify-center gap-2 ${
+                          className={`w-full py-2.5 rounded-xl font-extrabold text-xs shadow-glow transition-all active:scale-95 flex items-center justify-center gap-2 ${
                             isCopied
                               ? 'bg-emerald-500 text-slate-950'
                               : p.affiliateUrl

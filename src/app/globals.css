@@ -57,8 +57,13 @@ h1, h2, h3, h4, h5, h6 {
 .glass-card:hover {
   background: rgba(30, 41, 59, 0.75);
   border-color: rgba(168, 85, 247, 0.4);
-  box-shadow: 0 10px 30px -10px rgba(168, 85, 247, 0.25);
-  transform: translateY(-2px);
+}
+
+@media (hover: hover) {
+  .glass-card:hover {
+    box-shadow: 0 10px 30px -10px rgba(168, 85, 247, 0.25);
+    transform: translateY(-2px);
+  }
 }
 
 .gradient-text {

@@ -269,6 +269,41 @@
           else soldCount = parseInt(sStr.replace(/\./g, ''), 10) || 0;
         }
 
+        // Affiliate Info Extraction from card/page DOM
+        let commissionRate = 0;
+        let voucherAffiliate = '';
+        let voucherShop = '';
+        let voucherPlatform = '';
+        let affiliateProgram = '';
+
+        // Try extracting commission rate from card (e.g. "Hoa hồng X%" badges)
+        const cardText = card.innerText || '';
+        const commMatch = cardText.match(/(?:Hoa hồng|Commission|HH)[:\s]*([\d.,]+)\s*%/i);
+        if (commMatch) {
+          commissionRate = parseFloat(commMatch[1].replace(',', '.')) || 0;
+        }
+
+        // Try extracting voucher info from card labels
+        const voucherEls = card.querySelectorAll('[class*="voucher"], [class*="badge"], [class*="label"], [class*="tag"]');
+        voucherEls.forEach(el => {
+          const txt = (el.innerText || '').trim();
+          if (!txt) return;
+          const lower = txt.toLowerCase();
+          if (lower.includes('affiliate') || lower.includes('aff')) {
+            voucherAffiliate = txt;
+          } else if (lower.includes('shop') || lower.includes('cửa hàng')) {
+            voucherShop = txt;
+          } else if (lower.includes('sàn') || lower.includes('shopee') || lower.includes('platform')) {
+            voucherPlatform = txt;
+          }
+        });
+
+        // Try extracting affiliate program from card
+        const progMatch = cardText.match(/(?:Chương trình|Program)[:\s]*([^\n]+)/i);
+        if (progMatch) {
+          affiliateProgram = progMatch[1].trim();
+        }
+
         const productObj = {
           productId,
           shopId: shopInfo.shopId,
@@ -279,6 +314,11 @@
           soldCount,
           rating: 5.0,
           productUrl: fullUrl,
+          commissionRate,
+          voucherAffiliate,
+          voucherShop,
+          voucherPlatform,
+          affiliateProgram,
         };
         
         addProductToUI(productObj);
@@ -287,6 +327,88 @@
     });
 
     return newProducts;
+  }
+
+  // Extract detailed affiliate info from product detail page
+  function extractProductDetailAffiliateInfo() {
+    const info = {
+      commissionRate: 0,
+      maxCommission: null,
+      affiliateProgram: '',
+      voucherAffiliate: '',
+      voucherShop: '',
+      voucherPlatform: '',
+      commissionCondition: '',
+      campaignValidity: '',
+      allowAds: null,
+      cpsActual: null,
+    };
+
+    const pageText = document.body.innerText || '';
+
+    // Commission rate
+    const commMatch = pageText.match(/(?:Hoa hồng|Commission)[:\s]*([\d.,]+)\s*%/i);
+    if (commMatch) {
+      info.commissionRate = parseFloat(commMatch[1].replace(',', '.')) || 0;
+    }
+
+    // Max commission
+    const maxCommMatch = pageText.match(/(?:Hoa hồng tối đa|Max Commission|HH tối đa)[:\s]*([\d.,]+)\s*(?:₫|đ|VND|k)/i);
+    if (maxCommMatch) {
+      let val = parseFloat(maxCommMatch[1].replace(/[.,]/g, ''));
+      if (pageText.match(/(?:Hoa hồng tối đa|Max Commission|HH tối đa)[:\s]*[\d.,]+\s*k/i)) {
+        val *= 1000;
+      }
+      info.maxCommission = val;
+    }
+
+    // Vouchers extraction from detail page
+    const allEls = document.querySelectorAll('[class*="voucher"], [class*="badge"], [class*="promo"], [class*="label"]');
+    allEls.forEach(el => {
+      const txt = (el.innerText || '').trim();
+      if (!txt || txt.length > 200) return;
+      const lower = txt.toLowerCase();
+      if ((lower.includes('affiliate') || lower.includes('aff')) && !info.voucherAffiliate) {
+        info.voucherAffiliate = txt;
+      } else if ((lower.includes('shop') || lower.includes('cửa hàng')) && !info.voucherShop) {
+        info.voucherShop = txt;
+      } else if ((lower.includes('sàn') || lower.includes('freeship') || lower.includes('platform')) && !info.voucherPlatform) {
+        info.voucherPlatform = txt;
+      }
+    });
+
+    // Affiliate program name
+    const progMatch = pageText.match(/(?:Chương trình Affiliate|Affiliate Program|Campaign)[:\s]*([^\n]{3,80})/i);
+    if (progMatch) {
+      info.affiliateProgram = progMatch[1].trim();
+    }
+
+    // Commission condition
+    const condMatch = pageText.match(/(?:Điều kiện|Condition|Yêu cầu)[:\s]*([^\n]{3,150})/i);
+    if (condMatch) {
+      info.commissionCondition = condMatch[1].trim();
+    }
+
+    // Campaign validity
+    const validMatch = pageText.match(/(?:Hiệu lực|Thời gian|Valid|Validity|Hạn)[:\s]*([\d\/\-\.]+\s*[-~đến]+\s*[\d\/\-\.]+)/i);
+    if (validMatch) {
+      info.campaignValidity = validMatch[1].trim();
+    }
+
+    // Allow ads
+    if (pageText.match(/(?:Được phép|Cho phép|Allowed).*(?:quảng cáo|ads|advertising)/i)) {
+      info.allowAds = true;
+    } else if (pageText.match(/(?:Không được|Cấm|Not allowed).*(?:quảng cáo|ads|advertising)/i)) {
+      info.allowAds = false;
+    }
+
+    // CPS actual
+    const cpsMatch = pageText.match(/(?:CPS|Commission thực tế|Actual Commission)[:\s]*([\d.,]+)\s*%/i);
+    if (cpsMatch) {
+      info.cpsActual = parseFloat(cpsMatch[1].replace(',', '.')) || null;
+    }
+
+    return info;
   }
 
   // Auto-scroll loop engine

@@ -44,7 +44,12 @@ export async function PATCH(
   try {
     const { id } = params;
     const body = await req.json();
-    const { price, salePrice, commissionRate, name } = body;
+    const {
+      price, salePrice, commissionRate, name,
+      maxCommission, affiliateProgram, voucherAffiliate,
+      voucherShop, voucherPlatform, commissionCondition,
+      campaignValidity, allowAds, cpsActual
+    } = body;
 
     const dataToUpdate: any = {};
 
@@ -59,6 +64,21 @@ export async function PATCH(
     }
     if (name !== undefined) {
       dataToUpdate.name = String(name).trim();
+    }
+    if (maxCommission !== undefined && maxCommission !== null) {
+      dataToUpdate.maxCommission = Number(maxCommission);
+    }
+    if (affiliateProgram !== undefined) dataToUpdate.affiliateProgram = affiliateProgram;
+    if (voucherAffiliate !== undefined) dataToUpdate.voucherAffiliate = voucherAffiliate;
+    if (voucherShop !== undefined) dataToUpdate.voucherShop = voucherShop;
+    if (voucherPlatform !== undefined) dataToUpdate.voucherPlatform = voucherPlatform;
+    if (commissionCondition !== undefined) dataToUpdate.commissionCondition = commissionCondition;
+    if (campaignValidity !== undefined) dataToUpdate.campaignValidity = campaignValidity;
+    if (allowAds !== undefined && allowAds !== null) {
+      dataToUpdate.allowAds = Boolean(allowAds);
+    }
+    if (cpsActual !== undefined && cpsActual !== null) {
+      dataToUpdate.cpsActual = Number(cpsActual);
     }
 
     if (dataToUpdate.salePrice || dataToUpdate.commissionRate) {

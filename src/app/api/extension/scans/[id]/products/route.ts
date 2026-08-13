@@ -87,6 +87,16 @@ export async function POST(
           let commRate = (prod.commissionRate !== undefined && prod.commissionRate !== null && !isNaN(Number(prod.commissionRate))) ? Number(prod.commissionRate) : 0;
           if (isNaN(commRate)) commRate = 0;
 
+          const maxCommission = prod.maxCommission !== undefined && prod.maxCommission !== null ? Number(prod.maxCommission) : undefined;
+          const affiliateProgram = prod.affiliateProgram || undefined;
+          const voucherAffiliate = prod.voucherAffiliate || undefined;
+          const voucherShop = prod.voucherShop || undefined;
+          const voucherPlatform = prod.voucherPlatform || undefined;
+          const commissionCondition = prod.commissionCondition || undefined;
+          const campaignValidity = prod.campaignValidity || undefined;
+          const allowAds = prod.allowAds !== undefined && prod.allowAds !== null ? Boolean(prod.allowAds) : undefined;
+          const cpsActual = prod.cpsActual !== undefined && prod.cpsActual !== null ? Number(prod.cpsActual) : undefined;
+
           // Check if product already exists
           const existingProduct = await db.product.findUnique({
             where: {
@@ -121,6 +131,15 @@ export async function POST(
                 dataSource: 'browser',
                 isActive: true,
                 updatedAt: new Date(),
+                ...(maxCommission !== undefined && { maxCommission }),
+                ...(affiliateProgram && { affiliateProgram }),
+                ...(voucherAffiliate && { voucherAffiliate }),
+                ...(voucherShop && { voucherShop }),
+                ...(voucherPlatform && { voucherPlatform }),
+                ...(commissionCondition && { commissionCondition }),
+                ...(campaignValidity && { campaignValidity }),
+                ...(allowAds !== undefined && { allowAds }),
+                ...(cpsActual !== undefined && { cpsActual }),
               },
             });
             updatedCount++;
@@ -152,6 +171,15 @@ export async function POST(
                 affiliateStatus: 'pending',
                 dataSource: 'browser',
                 isActive: true,
+                ...(maxCommission !== undefined && { maxCommission }),
+                ...(affiliateProgram && { affiliateProgram }),
+                ...(voucherAffiliate && { voucherAffiliate }),
+                ...(voucherShop && { voucherShop }),
+                ...(voucherPlatform && { voucherPlatform }),
+                ...(commissionCondition && { commissionCondition }),
+                ...(campaignValidity && { campaignValidity }),
+                ...(allowAds !== undefined && { allowAds }),
+                ...(cpsActual !== undefined && { cpsActual }),
               },
             });
             createdCount++;

@@ -37,6 +37,13 @@ const navItems = [
     highlight: true,
   },
   {
+    name: 'Tạo Link Rút Gọn',
+    href: '/link-generator',
+    icon: Link2,
+    badge: 'Mới',
+    highlight: true,
+  },
+  {
     name: 'Thư Viện Sản Phẩm',
     href: '/library',
     icon: ShoppingBag,

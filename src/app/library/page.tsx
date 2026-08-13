@@ -31,7 +31,13 @@ import {
   CheckCircle2,
   Clock,
   Tag,
-  X
+  X,
+  Info,
+  Ticket,
+  Megaphone,
+  Shield,
+  CalendarDays,
+  Award
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import * as XLSX from 'xlsx';
@@ -73,12 +79,30 @@ function LibraryContent() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [generatingBulk, setGeneratingBulk] = useState(false);
 
-  const [editingProduct, setEditingProduct] = useState<{ id: string; name: string; commissionRate: number } | null>(null);
+  const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [newCommRate, setNewCommRate] = useState<string>('');
+  const [editMaxComm, setEditMaxComm] = useState<string>('');
+  const [editAffProgram, setEditAffProgram] = useState<string>('');
+  const [editVoucherAff, setEditVoucherAff] = useState<string>('');
+  const [editVoucherShop, setEditVoucherShop] = useState<string>('');
+  const [editVoucherPlatform, setEditVoucherPlatform] = useState<string>('');
+  const [editCondition, setEditCondition] = useState<string>('');
+  const [editCampaignValidity, setEditCampaignValidity] = useState<string>('');
+  const [editAllowAds, setEditAllowAds] = useState<string>('');
+  const [editCpsActual, setEditCpsActual] = useState<string>('');
 
   const handleOpenEdit = (p: any) => {
-    setEditingProduct({ id: p.id, name: p.name, commissionRate: p.commissionRate });
+    setEditingProduct(p);
     setNewCommRate(String(p.commissionRate || 0));
+    setEditMaxComm(p.maxCommission != null ? String(p.maxCommission) : '');
+    setEditAffProgram(p.affiliateProgram || '');
+    setEditVoucherAff(p.voucherAffiliate || '');
+    setEditVoucherShop(p.voucherShop || '');
+    setEditVoucherPlatform(p.voucherPlatform || '');
+    setEditCondition(p.commissionCondition || '');
+    setEditCampaignValidity(p.campaignValidity || '');
+    setEditAllowAds(p.allowAds === true ? 'yes' : p.allowAds === false ? 'no' : '');
+    setEditCpsActual(p.cpsActual != null ? String(p.cpsActual) : '');
   };
 
   const handleSaveCommission = async () => {
@@ -90,16 +114,28 @@ function LibraryContent() {
     }
 
     try {
+      const updatePayload: any = { commissionRate: rate };
+      if (editMaxComm) updatePayload.maxCommission = parseFloat(editMaxComm) || null;
+      if (editAffProgram) updatePayload.affiliateProgram = editAffProgram;
+      if (editVoucherAff) updatePayload.voucherAffiliate = editVoucherAff;
+      if (editVoucherShop) updatePayload.voucherShop = editVoucherShop;
+      if (editVoucherPlatform) updatePayload.voucherPlatform = editVoucherPlatform;
+      if (editCondition) updatePayload.commissionCondition = editCondition;
+      if (editCampaignValidity) updatePayload.campaignValidity = editCampaignValidity;
+      if (editAllowAds === 'yes') updatePayload.allowAds = true;
+      else if (editAllowAds === 'no') updatePayload.allowAds = false;
+      if (editCpsActual) updatePayload.cpsActual = parseFloat(editCpsActual) || null;
+
       const res = await fetch(`/api/products/${editingProduct.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commissionRate: rate }),
+        body: JSON.stringify(updatePayload),
       });
       const data = await res.json();
       if (data.success) {
-        showToast(`Đã cập nhật hoa hồng thành ${rate}%!`);
+        showToast(`Đã cập nhật thông tin Affiliate!`);
         setProducts((prev) =>
-          prev.map((item) => (item.id === editingProduct.id ? { ...item, commissionRate: rate } : item))
+          prev.map((item) => (item.id === editingProduct.id ? { ...item, ...updatePayload } : item))
         );
         setEditingProduct(null);
       } else {
@@ -300,9 +336,20 @@ function LibraryContent() {
       'Giá KM (VND)': p.salePrice,
       'Đã bán': p.sold,
       'Hoa hồng %': p.commissionRate,
+      'HH dự kiến/đơn (VND)': Math.round((p.salePrice * p.commissionRate) / 100),
+      'HH tối đa (VND)': p.maxCommission || '',
+      'CPS thực tế %': p.cpsActual || '',
       'Hoa hồng ước tính (VND)': p.estCommission,
+      'Chương trình Affiliate': p.affiliateProgram || '',
+      'Voucher Affiliate': p.voucherAffiliate || '',
+      'Voucher Shop': p.voucherShop || '',
+      'Voucher Sàn': p.voucherPlatform || '',
+      'Điều kiện nhận HH': p.commissionCondition || '',
+      'Thời gian campaign': p.campaignValidity || '',
+      'Cho phép quảng cáo': p.allowAds === true ? 'Có' : p.allowAds === false ? 'Không' : '',
       'Affiliate Score': p.affiliateScore,
       'Affiliate Link': p.affiliateUrl || p.originalUrl,
+      'Deep Link gốc': p.originalUrl,
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -315,7 +362,7 @@ function LibraryContent() {
   const unconfiguredCount = products.filter(p => p.affiliateStatus === 'pending_configuration' || !p.affiliateUrl).length;
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 pb-20">
       {/* Toast Notification */}
       {toastMsg && (
         <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-50 px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-xs shadow-2xl flex items-center gap-2 animate-bounce max-w-[90vw]">
@@ -662,19 +709,27 @@ function LibraryContent() {
 
       {/* Main Products Grid / Table View */}
       {loading ? (
-        <div className="text-center py-16 space-y-3">
-          <div className="w-8 h-8 rounded-full border-2 border-purple-500 border-t-transparent animate-spin mx-auto" />
-          <p className="text-xs text-slate-400">Đang tải dữ liệu sản phẩm từ Database...</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {[...Array(8)].map((_, i) => (
+            <div key={i} className="glass-card p-4 rounded-2xl space-y-3 animate-pulse">
+              <div className="aspect-[4/5] rounded-xl bg-slate-800" />
+              <div className="h-4 bg-slate-800 rounded-lg w-3/4" />
+              <div className="h-3 bg-slate-800 rounded-lg w-1/2" />
+              <div className="h-10 bg-slate-800 rounded-xl" />
+            </div>
+          ))}
         </div>
       ) : products.length === 0 ? (
         <div className="text-center py-16 glass-card rounded-3xl space-y-3">
-          <ShoppingBag className="w-12 h-12 text-slate-600 mx-auto" />
+          <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-slate-800 to-slate-900 mx-auto flex items-center justify-center">
+            <ShoppingBag className="w-16 h-16 text-slate-500" />
+          </div>
           <h3 className="font-bold text-white text-base">Không tìm thấy sản phẩm nào</h3>
           <p className="text-xs text-slate-400">Thử tìm kiếm từ khóa khác hoặc dán link quét shop mới.</p>
         </div>
       ) : viewMode === 'grid' ? (
         /* GRID CARD VIEW (Section 19 & 20) */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {products.map((p) => (
             <div key={p.id} className="glass-card rounded-2xl overflow-hidden flex flex-col justify-between group relative">
               <input
@@ -684,7 +739,7 @@ function LibraryContent() {
                 className="absolute top-3 left-3 z-10 w-5 h-5 rounded border-slate-700 text-purple-600 focus:ring-purple-500 cursor-pointer"
               />
 
-              <div className="relative aspect-square overflow-hidden bg-slate-900">
+              <div className="relative aspect-[4/5] overflow-hidden bg-slate-900">
                 <img
                   src={p.image}
                   alt={p.name}
@@ -696,9 +751,14 @@ function LibraryContent() {
                   <span>Score: {p.affiliateScore}/100</span>
                 </div>
 
+                <div className="absolute bottom-3 right-3 px-2 py-1 rounded-full bg-slate-950/70 backdrop-blur border border-slate-700/50 text-white font-bold text-[10px] flex items-center gap-1">
+                  <Package className="w-3 h-3 text-slate-400" />
+                  <span>Đã bán {formatNumber(p.sold)}</span>
+                </div>
+
                 <button
                   onClick={() => handleOpenEdit(p)}
-                  className="absolute bottom-3 left-3 px-2.5 py-1 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg transition-all flex items-center gap-1 group/btn"
+                  className="absolute bottom-3 left-3 px-3 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg transition-all flex items-center gap-1 group/btn cursor-pointer"
                   title="Bấm để chỉnh sửa tỷ lệ hoa hồng"
                 >
                   <span>Hoa Hồng {p.commissionRate}%</span>
@@ -708,11 +768,11 @@ function LibraryContent() {
 
               <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
                 <div className="space-y-1.5">
-                  <div className="text-[11px] font-semibold text-purple-400 flex items-center gap-1">
+                  <h3 className="text-xs font-bold text-white line-clamp-2 leading-relaxed min-h-[2.5rem]">{p.name}</h3>
+                  <div className="text-[11px] text-slate-500 flex items-center gap-1">
                     <Store className="w-3 h-3" />
                     <span>{p.shop?.name || 'Shopee Store'}</span>
                   </div>
-                  <h3 className="text-xs font-bold text-white line-clamp-2 leading-relaxed">{p.name}</h3>
                 </div>
 
                 <div className="pt-2 border-t border-slate-800/80 space-y-2">
@@ -759,7 +819,69 @@ function LibraryContent() {
                       <span className="block text-slate-500">Tổng HH tiềm năng</span>
                       <span className="text-amber-300 font-bold text-[11px]">~{formatCurrency(Math.round(p.sold * p.salePrice * p.commissionRate / 100))}</span>
                     </div>
+                    {p.maxCommission != null && p.maxCommission > 0 && (
+                      <div className="text-slate-400 col-span-2 pt-1 border-t border-slate-800/40">
+                        <span className="text-slate-500">HH tối đa: </span>
+                        <span className="text-rose-400 font-bold">{formatCurrency(p.maxCommission)}</span>
+                      </div>
+                    )}
+                    {p.cpsActual != null && p.cpsActual > 0 && (
+                      <div className="text-slate-400 col-span-2">
+                        <span className="text-slate-500">CPS thực tế: </span>
+                        <span className="text-cyan-400 font-bold">{p.cpsActual}%</span>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Row 5: Affiliate Detail Info */}
+                  {(p.affiliateProgram || p.voucherAffiliate || p.voucherShop || p.voucherPlatform || p.commissionCondition || p.campaignValidity || p.allowAds !== null) && (
+                    <div className="p-2 rounded-lg bg-purple-950/30 border border-purple-500/10 space-y-1 text-[10px]">
+                      {p.affiliateProgram && (
+                        <div className="flex items-center gap-1 text-purple-300">
+                          <Award className="w-3 h-3 text-purple-400 flex-shrink-0" />
+                          <span className="truncate">{p.affiliateProgram}</span>
+                        </div>
+                      )}
+                      {p.voucherAffiliate && (
+                        <div className="flex items-center gap-1 text-emerald-300">
+                          <Ticket className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                          <span className="truncate">Aff: {p.voucherAffiliate}</span>
+                        </div>
+                      )}
+                      {p.voucherShop && (
+                        <div className="flex items-center gap-1 text-blue-300">
+                          <Ticket className="w-3 h-3 text-blue-400 flex-shrink-0" />
+                          <span className="truncate">Shop: {p.voucherShop}</span>
+                        </div>
+                      )}
+                      {p.voucherPlatform && (
+                        <div className="flex items-center gap-1 text-amber-300">
+                          <Ticket className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                          <span className="truncate">Sàn: {p.voucherPlatform}</span>
+                        </div>
+                      )}
+                      {p.commissionCondition && (
+                        <div className="flex items-center gap-1 text-slate-300">
+                          <Info className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                          <span className="truncate" title={p.commissionCondition}>ĐK: {p.commissionCondition}</span>
+                        </div>
+                      )}
+                      {p.campaignValidity && (
+                        <div className="flex items-center gap-1 text-slate-300">
+                          <CalendarDays className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                          <span className="truncate">{p.campaignValidity}</span>
+                        </div>
+                      )}
+                      {p.allowAds !== null && p.allowAds !== undefined && (
+                        <div className="flex items-center gap-1">
+                          <Megaphone className="w-3 h-3 flex-shrink-0" />
+                          <span className={p.allowAds ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                            {p.allowAds ? '✅ Cho phép chạy Ads' : '❌ Không cho phép Ads'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Actions & Section 20 Button State Toggle */}
@@ -812,7 +934,7 @@ function LibraryContent() {
       ) : (
         /* TABLE VIEW */
         <div className="glass-panel rounded-2xl overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full text-left border-collapse text-xs min-w-[900px]">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-900/80 text-slate-400 font-semibold">
                 <th className="p-3">
@@ -825,6 +947,9 @@ function LibraryContent() {
                 <th className="p-3">Doanh Thu ƯT</th>
                 <th className="p-3">HH %</th>
                 <th className="p-3">HH/Đơn</th>
+                <th className="p-3">HH Max</th>
+                <th className="p-3">Voucher</th>
+                <th className="p-3">Ads</th>
                 <th className="p-3">Tổng HH Tiềm Năng</th>
                 <th className="p-3">Score</th>
                 <th className="p-3">Trạng Thái</th>
@@ -838,7 +963,7 @@ function LibraryContent() {
                 const estRevenue = p.sold * p.salePrice;
                 const totalCommPotential = Math.round(p.sold * p.salePrice * p.commissionRate / 100);
                 return (
-                <tr key={p.id} className="hover:bg-slate-800/40 transition-colors">
+                <tr key={p.id} className="hover:bg-slate-800/40 transition-colors odd:bg-slate-900/30">
                   <td className="p-3">
                     <input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => toggleSelect(p.id)} />
                   </td>
@@ -846,7 +971,7 @@ function LibraryContent() {
                     <div className="flex items-center gap-3">
                       <img src={p.image} alt={p.name} className="w-10 h-10 rounded-lg object-cover bg-slate-900 flex-shrink-0" />
                       <div>
-                        <div className="font-bold text-white truncate max-w-xs">{p.name}</div>
+                        <div className="font-bold text-white truncate max-w-[280px]">{p.name}</div>
                         <div className="text-[10px] text-slate-400">{p.shop?.name}</div>
                       </div>
                     </div>
@@ -861,6 +986,21 @@ function LibraryContent() {
                   <td className="p-3 text-purple-300 font-semibold" title={`${p.sold} × ${formatCurrency(p.salePrice)}`}>{formatCurrency(estRevenue)}</td>
                   <td className="p-3 font-bold text-purple-300">{p.commissionRate}%</td>
                   <td className="p-3 text-emerald-400 font-semibold">~{formatCurrency(commPerOrder)}</td>
+                  <td className="p-3 text-rose-300 font-semibold whitespace-nowrap">
+                    {p.maxCommission ? formatCurrency(p.maxCommission) : <span className="text-slate-600">—</span>}
+                  </td>
+                  <td className="p-3 whitespace-nowrap">
+                    {p.voucherAffiliate || p.voucherShop || p.voucherPlatform ? (
+                      <div className="space-y-0.5">
+                        {p.voucherAffiliate && <div className="text-emerald-400 text-[9px] truncate max-w-[80px]" title={p.voucherAffiliate}>🎟 {p.voucherAffiliate}</div>}
+                        {p.voucherShop && <div className="text-blue-400 text-[9px] truncate max-w-[80px]" title={p.voucherShop}>🏪 {p.voucherShop}</div>}
+                        {p.voucherPlatform && <div className="text-amber-400 text-[9px] truncate max-w-[80px]" title={p.voucherPlatform}>🛒 {p.voucherPlatform}</div>}
+                      </div>
+                    ) : <span className="text-slate-600">—</span>}
+                  </td>
+                  <td className="p-3">
+                    {p.allowAds === true ? <span className="text-emerald-400 font-bold text-[10px]">✅</span> : p.allowAds === false ? <span className="text-rose-400 font-bold text-[10px]">❌</span> : <span className="text-slate-600">—</span>}
+                  </td>
                   <td className="p-3 text-amber-300 font-bold" title={`${formatNumber(p.sold)} đơn × ~${formatCurrency(commPerOrder)}/đơn`}>
                     ~{formatCurrency(totalCommPotential)}
                   </td>
@@ -915,14 +1055,14 @@ function LibraryContent() {
         </div>
       )}
 
-      {/* EDIT COMMISSION MODAL */}
+      {/* EDIT AFFILIATE INFO MODAL */}
       {editingProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-slate-900 border border-purple-500/30 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+          <div className="bg-slate-900 border border-purple-500/30 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-extrabold text-white text-base flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-purple-400" />
-                <span>Chỉnh Sửa Tỷ Lệ Hoa Hồng</span>
+                <span>Chỉnh Sửa Thông Tin Affiliate</span>
               </h3>
               <button
                 onClick={() => setEditingProduct(null)}
@@ -938,30 +1078,76 @@ function LibraryContent() {
                 <p className="font-bold text-white line-clamp-2">{editingProduct.name}</p>
               </div>
 
-              <div>
-                <label className="text-slate-300 font-semibold block mb-1">
-                  Tỷ lệ hoa hồng thực tế (%):
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="100"
-                    value={newCommRate}
-                    onChange={(e) => setNewCommRate(e.target.value)}
-                    placeholder="VD: 10"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white font-bold text-sm focus:outline-none focus:border-purple-500"
-                  />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+              {/* Commission Rate */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Hoa hồng (%)</label>
+                  <div className="relative">
+                    <input type="number" step="0.1" min="0" max="100" value={newCommRate} onChange={(e) => setNewCommRate(e.target.value)} placeholder="VD: 12" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold text-sm focus:outline-none focus:border-purple-500" />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
+                  </div>
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Nhập tỷ lệ hoa hồng chuẩn từ ứng dụng Shopee (ví dụ: 10). Hệ thống sẽ tự động cập nhật lại Hoa hồng/Đơn và Tổng hoa hồng tiềm năng.
-                </p>
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">HH tối đa (VND)</label>
+                  <input type="number" value={editMaxComm} onChange={(e) => setEditMaxComm(e.target.value)} placeholder="VD: 50000" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold text-sm focus:outline-none focus:border-purple-500" />
+                </div>
+              </div>
+
+              {/* CPS Actual */}
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">CPS / Commission thực tế (%)</label>
+                <div className="relative">
+                  <input type="number" step="0.1" min="0" max="100" value={editCpsActual} onChange={(e) => setEditCpsActual(e.target.value)} placeholder="VD: 10.5" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold text-sm focus:outline-none focus:border-purple-500" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
+                </div>
+              </div>
+
+              {/* Affiliate Program */}
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Chương trình Affiliate</label>
+                <input type="text" value={editAffProgram} onChange={(e) => setEditAffProgram(e.target.value)} placeholder="VD: Shopee Affiliate Program" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500" />
+              </div>
+
+              {/* Vouchers */}
+              <div className="grid grid-cols-1 gap-2">
+                <div>
+                  <label className="text-emerald-400 font-semibold block mb-1">🎟 Voucher Affiliate</label>
+                  <input type="text" value={editVoucherAff} onChange={(e) => setEditVoucherAff(e.target.value)} placeholder="VD: Giảm 10% tối đa 30k" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500" />
+                </div>
+                <div>
+                  <label className="text-blue-400 font-semibold block mb-1">🏪 Voucher Shop</label>
+                  <input type="text" value={editVoucherShop} onChange={(e) => setEditVoucherShop(e.target.value)} placeholder="VD: Giảm 5% đơn từ 200k" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+                </div>
+                <div>
+                  <label className="text-amber-400 font-semibold block mb-1">🛒 Voucher Sàn</label>
+                  <input type="text" value={editVoucherPlatform} onChange={(e) => setEditVoucherPlatform(e.target.value)} placeholder="VD: Freeship đơn từ 50k" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500" />
+                </div>
+              </div>
+
+              {/* Commission Condition */}
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Điều kiện nhận hoa hồng</label>
+                <textarea value={editCondition} onChange={(e) => setEditCondition(e.target.value)} placeholder="VD: Đơn hàng được xác nhận, không hoàn trả trong 7 ngày" rows={2} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500 resize-none" />
+              </div>
+
+              {/* Campaign Validity */}
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Thời gian hiệu lực campaign</label>
+                <input type="text" value={editCampaignValidity} onChange={(e) => setEditCampaignValidity(e.target.value)} placeholder="VD: 01/08/2026 - 31/08/2026" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500" />
+              </div>
+
+              {/* Allow Ads */}
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Cho phép chạy quảng cáo?</label>
+                <select value={editAllowAds} onChange={(e) => setEditAllowAds(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500">
+                  <option value="">— Chưa rõ —</option>
+                  <option value="yes">✅ Có — Được phép chạy Ads</option>
+                  <option value="no">❌ Không — Cấm chạy Ads</option>
+                </select>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-800">
               <button
                 onClick={() => setEditingProduct(null)}
                 className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold"

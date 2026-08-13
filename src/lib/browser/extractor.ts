@@ -59,7 +59,7 @@ export class ShopeeProductExtractor {
         const soldCount = item.historical_sold || item.sold || 0;
         const ratingStar = item.item_rating?.rating_star ? parseFloat(item.item_rating.rating_star.toFixed(1)) : 5.0;
 
-        const commRate = item.raw_discount ? Math.min(20, Math.max(5, item.raw_discount)) : 0;
+        const commRate = item.commissionRate ? Number(item.commissionRate) : 0;
         const estComm = Math.round((salePriceVnd * commRate) / 100);
 
         const score = calculateAffiliateScore({

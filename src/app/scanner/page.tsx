@@ -484,7 +484,7 @@ export default function ScannerPage() {
                   <span>•</span>
                   <span className="text-emerald-400 font-semibold"><strong className="text-emerald-400">{scannedShop.affProductCount}</strong> Affiliate</span>
                   <span>•</span>
-                  <span className="text-amber-300 font-bold">🔥 HH Cao nhất: {scannedShop.maxCommissionRate || 18}%</span>
+                  <span className="text-amber-300 font-bold">🔥 HH Cao nhất: {scannedShop.maxCommissionRate > 0 ? `${scannedShop.maxCommissionRate}%` : 'Chưa cập nhật'}</span>
                 </div>
               </div>
             </div>

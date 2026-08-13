@@ -23,7 +23,15 @@ import {
   TrendingUp,
   Package,
   DollarSign,
-  BarChart3
+  BarChart3,
+  Edit3,
+  Filter,
+  RotateCcw,
+  SlidersHorizontal,
+  CheckCircle2,
+  Clock,
+  Tag,
+  X
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import * as XLSX from 'xlsx';
@@ -46,9 +54,17 @@ function LibraryContent() {
   const initialQuery = searchParams.get('q') || '';
 
   const [products, setProducts] = useState<any[]>([]);
+  const [shops, setShops] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [filterType, setFilterType] = useState<string>('all');
+  const [selectedShop, setSelectedShop] = useState<string>('all');
+  const [affiliateStatusFilter, setAffiliateStatusFilter] = useState<string>('all');
+  const [soldTierFilter, setSoldTierFilter] = useState<string>('all');
+  const [minPriceInput, setMinPriceInput] = useState<string>('');
+  const [maxPriceInput, setMaxPriceInput] = useState<string>('');
+  const [minCommInput, setMinCommInput] = useState<string>('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<string>('score');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
 
@@ -57,14 +73,61 @@ function LibraryContent() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [generatingBulk, setGeneratingBulk] = useState(false);
 
-  // Section 21: Search with 300ms Debounce
+  const [editingProduct, setEditingProduct] = useState<{ id: string; name: string; commissionRate: number } | null>(null);
+  const [newCommRate, setNewCommRate] = useState<string>('');
+
+  const handleOpenEdit = (p: any) => {
+    setEditingProduct({ id: p.id, name: p.name, commissionRate: p.commissionRate });
+    setNewCommRate(String(p.commissionRate || 0));
+  };
+
+  const handleSaveCommission = async () => {
+    if (!editingProduct) return;
+    const rate = parseFloat(newCommRate);
+    if (isNaN(rate) || rate < 0 || rate > 100) {
+      showToast('Tỷ lệ hoa hồng không hợp lệ (0-100%)');
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/products/${editingProduct.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commissionRate: rate }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Đã cập nhật hoa hồng thành ${rate}%!`);
+        setProducts((prev) =>
+          prev.map((item) => (item.id === editingProduct.id ? { ...item, commissionRate: rate } : item))
+        );
+        setEditingProduct(null);
+      } else {
+        showToast(data.error || 'Không thể cập nhật hoa hồng');
+      }
+    } catch (err) {
+      showToast('Lỗi cập nhật hoa hồng');
+    }
+  };
+
+  // Debounced search & filtering fetch
   useEffect(() => {
     const handler = setTimeout(() => {
       fetchProducts();
     }, 300);
 
     return () => clearTimeout(handler);
-  }, [searchQuery, filterType, sortBy]);
+  }, [
+    searchQuery, 
+    filterType, 
+    sortBy, 
+    selectedShop, 
+    affiliateStatusFilter, 
+    soldTierFilter, 
+    minPriceInput, 
+    maxPriceInput, 
+    minCommInput
+  ]);
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -73,10 +136,36 @@ function LibraryContent() {
       if (filterType !== 'all') {
         url += `&filterType=${filterType}`;
       }
+      if (selectedShop && selectedShop !== 'all') {
+        url += `&shopId=${encodeURIComponent(selectedShop)}`;
+      }
+      if (affiliateStatusFilter && affiliateStatusFilter !== 'all') {
+        url += `&affiliateStatus=${affiliateStatusFilter}`;
+      }
+      if (minPriceInput) {
+        url += `&minPrice=${encodeURIComponent(minPriceInput)}`;
+      }
+      if (maxPriceInput) {
+        url += `&maxPrice=${encodeURIComponent(maxPriceInput)}`;
+      }
+      if (minCommInput) {
+        url += `&minCommission=${encodeURIComponent(minCommInput)}`;
+      }
+      if (soldTierFilter && soldTierFilter !== 'all') {
+        if (soldTierFilter === 'new') url += `&minSold=1&maxSold=199`;
+        else if (soldTierFilter === 'stable') url += `&minSold=200&maxSold=999`;
+        else if (soldTierFilter === 'good') url += `&minSold=1000&maxSold=4999`;
+        else if (soldTierFilter === 'hot') url += `&minSold=5000&maxSold=9999`;
+        else if (soldTierFilter === 'super_hot') url += `&minSold=10000`;
+      }
+
       const res = await fetch(url);
       const data = await res.json();
       if (data.products) {
         setProducts(data.products);
+      }
+      if (data.shops) {
+        setShops(data.shops);
       }
     } catch (err) {
       console.error('Error fetching library products:', err);
@@ -84,6 +173,29 @@ function LibraryContent() {
       setLoading(false);
     }
   };
+
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setSelectedShop('all');
+    setAffiliateStatusFilter('all');
+    setSoldTierFilter('all');
+    setMinPriceInput('');
+    setMaxPriceInput('');
+    setMinCommInput('');
+    setFilterType('all');
+    setSortBy('score');
+  };
+
+  const activeFiltersCount = [
+    selectedShop !== 'all',
+    affiliateStatusFilter !== 'all',
+    soldTierFilter !== 'all',
+    Boolean(minPriceInput),
+    Boolean(maxPriceInput),
+    Boolean(minCommInput),
+    filterType !== 'all',
+    Boolean(searchQuery),
+  ].filter(Boolean).length;
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -253,26 +365,231 @@ function LibraryContent() {
         </div>
       </div>
 
-      {/* Section 21: Real Search Input Bar with 300ms Debounce */}
-      <div className="relative">
-        <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Tìm sản phẩm theo tên, shop, danh mục, product ID (bình nước, nồi chiên, son...)"
-          className="w-full bg-slate-900/90 border-2 border-slate-800 rounded-2xl pl-12 pr-4 py-3.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-all"
-        />
+      {/* Search Input Bar & Filter Toggle Button */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Tìm sản phẩm theo tên, shop, danh mục, product ID (bình nước, nồi chiên, son...)"
+            className="w-full bg-slate-900/90 border-2 border-slate-800 rounded-2xl pl-12 pr-10 py-3.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-all"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        <button
+          onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+          className={`px-4 py-3 rounded-2xl border text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+            showAdvancedFilters || activeFiltersCount > 0
+              ? 'bg-purple-600/30 border-purple-500 text-purple-200'
+              : 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white'
+          }`}
+        >
+          <SlidersHorizontal className="w-4 h-4 text-purple-400" />
+          <span>BỘ LỌC CHI TIẾT</span>
+          {activeFiltersCount > 0 && (
+            <span className="w-5 h-5 rounded-full bg-purple-500 text-white font-extrabold text-[10px] flex items-center justify-center">
+              {activeFiltersCount}
+            </span>
+          )}
+        </button>
       </div>
 
-      {/* Filter Tabs & Sort Dropdown */}
+      {/* Advanced Filter Panel */}
+      {showAdvancedFilters && (
+        <div className="glass-panel p-5 rounded-2xl border border-purple-500/30 space-y-4 animate-fade-in text-xs">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-2 font-bold text-white text-sm">
+              <Filter className="w-4 h-4 text-purple-400" />
+              <span>Bộ Lọc Sản Phẩm Chi Tiết</span>
+            </div>
+            {activeFiltersCount > 0 && (
+              <button
+                onClick={handleResetFilters}
+                className="text-slate-400 hover:text-rose-400 flex items-center gap-1 font-semibold transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Xóa tất cả bộ lọc</span>
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* 1. Filter by Shop */}
+            <div className="space-y-1.5">
+              <label className="text-slate-300 font-semibold flex items-center gap-1.5">
+                <Store className="w-3.5 h-3.5 text-purple-400" />
+                <span>Lọc Theo Shop:</span>
+              </label>
+              <select
+                value={selectedShop}
+                onChange={(e) => setSelectedShop(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-500"
+              >
+                <option value="all">Tất cả các Shop ({shops.length})</option>
+                {shops.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.platform})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 2. Filter by Affiliate Link Status */}
+            <div className="space-y-1.5">
+              <label className="text-slate-300 font-semibold flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                <span>Trạng Thái Affiliate Link:</span>
+              </label>
+              <select
+                value={affiliateStatusFilter}
+                onChange={(e) => setAffiliateStatusFilter(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-500"
+              >
+                <option value="all">Tất cả trạng thái</option>
+                <option value="ready">✓ Đã có Link Affiliate (Sẵn sàng)</option>
+                <option value="pending">⏳ Chưa có Link (Chờ tạo)</option>
+              </select>
+            </div>
+
+            {/* 3. Filter by Sold Count Tier */}
+            <div className="space-y-1.5">
+              <label className="text-slate-300 font-semibold flex items-center gap-1.5">
+                <Flame className="w-3.5 h-3.5 text-rose-400" />
+                <span>Mức Doanh Số / Đã Bán:</span>
+              </label>
+              <select
+                value={soldTierFilter}
+                onChange={(e) => setSoldTierFilter(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-500"
+              >
+                <option value="all">Tất cả mức bán</option>
+                <option value="new">🌱 Mới (1 - 199 đơn)</option>
+                <option value="stable">✅ Ổn định (200 - 999 đơn)</option>
+                <option value="good">⚡ Bán tốt (1.000 - 4.999 đơn)</option>
+                <option value="hot">🔥 Hot (5.000 - 9.999 đơn)</option>
+                <option value="super_hot">🚀 Siêu Hot (&gt;= 10.000 đơn)</option>
+              </select>
+            </div>
+
+            {/* 4. Filter by Commission Rate */}
+            <div className="space-y-1.5">
+              <label className="text-slate-300 font-semibold flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Hoa Hồng Từ (%):</span>
+                </span>
+                {minCommInput && (
+                  <button onClick={() => setMinCommInput('')} className="text-slate-500 hover:text-white">x</button>
+                )}
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={minCommInput}
+                  onChange={(e) => setMinCommInput(e.target.value)}
+                  placeholder="VD: 10 (%)"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+              <div className="flex items-center gap-1 pt-1">
+                {['5', '10', '15', '20'].map((val) => (
+                  <button
+                    key={val}
+                    onClick={() => setMinCommInput(minCommInput === val ? '' : val)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-all ${
+                      minCommInput === val
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    &gt;={val}%
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Row 2: Custom Price Range */}
+          <div className="pt-2 border-t border-slate-800/60 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-slate-400 font-semibold flex items-center gap-1">
+                <Tag className="w-3.5 h-3.5 text-amber-300" />
+                <span>Khoảng Giá (VNĐ):</span>
+              </span>
+              <input
+                type="number"
+                value={minPriceInput}
+                onChange={(e) => setMinPriceInput(e.target.value)}
+                placeholder="Giá từ (VD: 50000)"
+                className="w-36 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+              />
+              <span className="text-slate-500">-</span>
+              <input
+                type="number"
+                value={maxPriceInput}
+                onChange={(e) => setMaxPriceInput(e.target.value)}
+                placeholder="Đến (VD: 500000)"
+                className="w-36 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+              />
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => { setMinPriceInput(''); setMaxPriceInput('100000'); }}
+                  className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:text-white text-[10px]"
+                >
+                  &lt;100k
+                </button>
+                <button
+                  onClick={() => { setMinPriceInput('100000'); setMaxPriceInput('500000'); }}
+                  className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:text-white text-[10px]"
+                >
+                  100k - 500k
+                </button>
+                <button
+                  onClick={() => { setMinPriceInput('500000'); setMaxPriceInput(''); }}
+                  className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:text-white text-[10px]"
+                >
+                  &gt;500k
+                </button>
+              </div>
+            </div>
+
+            {activeFiltersCount > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-purple-300 font-semibold">
+                  Đang lọc: {products.length} sản phẩm phù hợp
+                </span>
+                <button
+                  onClick={handleResetFilters}
+                  className="px-3 py-1 rounded-xl bg-rose-500/20 text-rose-300 hover:bg-rose-500 hover:text-white font-bold text-[11px] transition-all"
+                >
+                  Xóa lọc
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Filter Quick Tabs & Sort Dropdown */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setFilterType('all')}
             className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${filterType === 'all' ? 'gradient-shopee text-white shadow-glow' : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white'}`}
           >
-            Tất Cả
+            Tất Cả ({products.length})
           </button>
           <button
             onClick={() => setFilterType('viral')}
@@ -305,6 +622,7 @@ function LibraryContent() {
           <option value="sold">Sắp xếp: Đã bán nhiều nhất</option>
           <option value="price_asc">Sắp xếp: Giá tăng dần</option>
           <option value="price_desc">Sắp xếp: Giá giảm dần</option>
+          <option value="newest">Sắp xếp: Mới cập nhật</option>
         </select>
       </div>
 
@@ -378,9 +696,14 @@ function LibraryContent() {
                   <span>Score: {p.affiliateScore}/100</span>
                 </div>
 
-                <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-full bg-emerald-500 text-slate-950 font-black text-xs shadow-lg">
-                  Hoa Hồng {p.commissionRate}%
-                </div>
+                <button
+                  onClick={() => handleOpenEdit(p)}
+                  className="absolute bottom-3 left-3 px-2.5 py-1 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg transition-all flex items-center gap-1 group/btn"
+                  title="Bấm để chỉnh sửa tỷ lệ hoa hồng"
+                >
+                  <span>Hoa Hồng {p.commissionRate}%</span>
+                  <Edit3 className="w-3 h-3 text-slate-900 group-hover/btn:scale-110 transition-transform" />
+                </button>
               </div>
 
               <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
@@ -576,12 +899,83 @@ function LibraryContent() {
                         TẠO LINK
                       </button>
                     )}
+                    <button
+                      onClick={() => handleOpenEdit(p)}
+                      className="ml-1.5 p-1.5 rounded-lg bg-slate-800 hover:bg-purple-600 text-slate-400 hover:text-white transition-all inline-flex items-center"
+                      title="Chỉnh sửa tỷ lệ hoa hồng"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
                   </td>
                 </tr>
                 );
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* EDIT COMMISSION MODAL */}
+      {editingProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-slate-900 border border-purple-500/30 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-extrabold text-white text-base flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-purple-400" />
+                <span>Chỉnh Sửa Tỷ Lệ Hoa Hồng</span>
+              </h3>
+              <button
+                onClick={() => setEditingProduct(null)}
+                className="text-slate-400 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <span className="text-slate-400 block mb-1">Sản phẩm:</span>
+                <p className="font-bold text-white line-clamp-2">{editingProduct.name}</p>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">
+                  Tỷ lệ hoa hồng thực tế (%):
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="100"
+                    value={newCommRate}
+                    onChange={(e) => setNewCommRate(e.target.value)}
+                    placeholder="VD: 10"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white font-bold text-sm focus:outline-none focus:border-purple-500"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Nhập tỷ lệ hoa hồng chuẩn từ ứng dụng Shopee (ví dụ: 10). Hệ thống sẽ tự động cập nhật lại Hoa hồng/Đơn và Tổng hoa hồng tiềm năng.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => setEditingProduct(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleSaveCommission}
+                className="px-5 py-2 rounded-xl gradient-shopee text-white text-xs font-extrabold shadow-glow hover:brightness-110"
+              >
+                LƯU CẬP NHẬT
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

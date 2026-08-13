@@ -104,6 +104,15 @@ model Product {
   extraCommissionRate  Float               @default(0) // e.g. 3.0 (%) Xtra
   totalCommissionRate  Float               @default(0) // base + extra (%)
   commissionRate       Float               @default(0) // e.g. 8.0 (%)
+  maxCommission        Float?              // Hoa hồng tối đa (VND)
+  affiliateProgram     String?             // Chương trình Affiliate đang tham gia
+  voucherAffiliate     String?             // Voucher dành cho Affiliate
+  voucherShop          String?             // Voucher Shop
+  voucherPlatform      String?             // Voucher Sàn
+  commissionCondition  String?             // Điều kiện nhận hoa hồng
+  campaignValidity     String?             // Thời gian hiệu lực campaign
+  allowAds             Boolean?            // Có được chạy quảng cáo không
+  cpsActual            Float?              // CPS/Commission thực tế (%)
   commissionSource     String?             // e.g. "Shopee Affiliate GraphQL API", "browser", "Unprovided"
   commissionUpdatedAt  DateTime?
   estCommission        Float               @default(0) // Estimated commission in VND

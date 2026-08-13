@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAdapter } from '@/lib/adapters';
 import { AffiliateLinkService } from '@/lib/affiliate/service';
+import { sanitizePrice } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +42,9 @@ export async function POST(
     for (const item of catalog) {
       if (item.hasAffiliate) affCount++;
 
+      const cleanPrice = sanitizePrice(item.price);
+      const cleanSalePrice = sanitizePrice(item.salePrice);
+
       const productRecord = await db.product.upsert({
         where: {
           platform_shopId_externalProductId: {
@@ -52,8 +56,8 @@ export async function POST(
         update: {
           name: item.name,
           image: item.image,
-          price: item.price,
-          salePrice: item.salePrice,
+          price: cleanPrice,
+          salePrice: cleanSalePrice,
           sold: item.sold,
           rating: item.rating,
           stock: item.stock,
@@ -61,7 +65,7 @@ export async function POST(
           category: item.category,
           hasAffiliate: item.hasAffiliate,
           commissionRate: item.commissionRate,
-          estCommission: item.estCommission,
+          estCommission: Math.round((cleanSalePrice * item.commissionRate) / 100),
           affiliateScore: item.affiliateScore,
           isActive: true,
           updatedAt: new Date(),
@@ -73,8 +77,8 @@ export async function POST(
           externalProductId: item.externalProductId,
           name: item.name,
           image: item.image,
-          price: item.price,
-          salePrice: item.salePrice,
+          price: cleanPrice,
+          salePrice: cleanSalePrice,
           sold: item.sold,
           rating: item.rating,
           stock: item.stock,
@@ -82,7 +86,7 @@ export async function POST(
           category: item.category,
           hasAffiliate: item.hasAffiliate,
           commissionRate: item.commissionRate,
-          estCommission: item.estCommission,
+          estCommission: Math.round((cleanSalePrice * item.commissionRate) / 100),
           affiliateScore: item.affiliateScore,
           affiliateStatus: item.hasAffiliate ? 'pending' : 'not_eligible',
           isActive: true,

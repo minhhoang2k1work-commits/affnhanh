@@ -11,7 +11,13 @@ export async function GET(req: NextRequest) {
     const shopId = searchParams.get('shopId') || '';
     const category = searchParams.get('category') || '';
     const hasAffiliate = searchParams.get('hasAffiliate');
+    const affiliateStatus = searchParams.get('affiliateStatus') || 'all'; // 'all', 'ready', 'pending'
     const minCommission = searchParams.get('minCommission');
+    const maxCommission = searchParams.get('maxCommission');
+    const minPrice = searchParams.get('minPrice');
+    const maxPrice = searchParams.get('maxPrice');
+    const minSold = searchParams.get('minSold');
+    const maxSold = searchParams.get('maxSold');
     const filterType = searchParams.get('filterType') || ''; // 'viral', 'top_sold', 'high_comm', 'sale'
     const sortBy = searchParams.get('sortBy') || 'score'; // 'score', 'commissionRate', 'sold', 'price_asc', 'price_desc', 'newest'
 
@@ -21,11 +27,12 @@ export async function GET(req: NextRequest) {
       whereClause.OR = [
         { name: { contains: q } },
         { category: { contains: q } },
+        { externalProductId: { contains: q } },
         { shop: { name: { contains: q } } },
       ];
     }
 
-    if (shopId) {
+    if (shopId && shopId !== 'all') {
       whereClause.shopId = shopId;
     }
 
@@ -37,8 +44,31 @@ export async function GET(req: NextRequest) {
       whereClause.hasAffiliate = hasAffiliate === 'true';
     }
 
-    if (minCommission) {
-      whereClause.commissionRate = { gte: parseFloat(minCommission) };
+    if (affiliateStatus === 'ready') {
+      whereClause.affiliateLinks = { some: {} };
+    } else if (affiliateStatus === 'pending') {
+      whereClause.affiliateLinks = { none: {} };
+    }
+
+    // Price range filtering
+    if (minPrice || maxPrice) {
+      whereClause.salePrice = {};
+      if (minPrice) whereClause.salePrice.gte = parseFloat(minPrice);
+      if (maxPrice) whereClause.salePrice.lte = parseFloat(maxPrice);
+    }
+
+    // Sold range filtering
+    if (minSold || maxSold) {
+      whereClause.sold = {};
+      if (minSold) whereClause.sold.gte = parseInt(minSold, 10);
+      if (maxSold) whereClause.sold.lte = parseInt(maxSold, 10);
+    }
+
+    // Commission rate range filtering
+    if (minCommission || maxCommission) {
+      whereClause.commissionRate = {};
+      if (minCommission) whereClause.commissionRate.gte = parseFloat(minCommission);
+      if (maxCommission) whereClause.commissionRate.lte = parseFloat(maxCommission);
     }
 
     if (filterType === 'viral') {
@@ -86,6 +116,11 @@ export async function GET(req: NextRequest) {
       orderBy,
     });
 
+    const shops = await db.shop.findMany({
+      select: { id: true, name: true, logo: true, platform: true, externalShopId: true },
+      orderBy: { name: 'asc' },
+    });
+
     const totalCount = await db.product.count({ where: whereClause });
     const affCount = await db.product.count({ where: { ...whereClause, hasAffiliate: true } });
 
@@ -94,6 +129,7 @@ export async function GET(req: NextRequest) {
       totalCount,
       affCount,
       nonAffCount: totalCount - affCount,
+      shops,
       products: products.map((p) => {
         const cleanPrice = sanitizePrice(p.price);
         const cleanSalePrice = sanitizePrice(p.salePrice);

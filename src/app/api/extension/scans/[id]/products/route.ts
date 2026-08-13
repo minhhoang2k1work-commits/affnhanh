@@ -59,8 +59,11 @@ export async function POST(
       });
     }
 
-    // 2. Validate & Upsert Products
+    // 2. Validate & Upsert Products (Handle existing product updates)
     let savedCount = 0;
+    let createdCount = 0;
+    let updatedCount = 0;
+
     if (Array.isArray(products) && products.length > 0 && dbShop) {
       for (const prod of products) {
         if (!prod || (!prod.productId && !prod.itemId) || !prod.productName) continue;
@@ -81,16 +84,11 @@ export async function POST(
 
           const originalUrl = prod.productUrl || prod.link || `https://shopee.vn/product/${dbShop.externalShopId}/${extProductId}`;
           
-          let commRate = Number(prod.commissionRate) || (price > 0 ? Math.min(20, Math.max(3, Math.floor(Math.random() * 12) + 4)) : 5);
-          if (isNaN(commRate)) commRate = 5;
+          let commRate = (prod.commissionRate !== undefined && prod.commissionRate !== null && !isNaN(Number(prod.commissionRate))) ? Number(prod.commissionRate) : 0;
+          if (isNaN(commRate)) commRate = 0;
 
-          let estComm = Math.round((salePrice * commRate) / 100);
-          if (isNaN(estComm)) estComm = 0;
-
-          let affScore = Math.min(100, Math.max(50, Math.round(commRate * 4 + rating * 8)));
-          if (isNaN(affScore)) affScore = 85;
-
-          await db.product.upsert({
+          // Check if product already exists
+          const existingProduct = await db.product.findUnique({
             where: {
               platform_shopId_externalProductId: {
                 platform,
@@ -98,41 +96,66 @@ export async function POST(
                 externalProductId: extProductId,
               },
             },
-            update: {
-              name,
-              image,
-              price,
-              salePrice,
-              sold,
-              rating,
-              originalUrl,
-              commissionRate: commRate,
-              estCommission: estComm,
-              affiliateScore: affScore,
-              dataSource: 'browser',
-              isActive: true,
-            },
-            create: {
-              userId,
-              platform,
-              shopId: dbShop.id,
-              externalProductId: extProductId,
-              name,
-              image,
-              price,
-              salePrice,
-              sold,
-              rating,
-              originalUrl,
-              hasAffiliate: true,
-              commissionRate: commRate,
-              estCommission: estComm,
-              affiliateScore: affScore,
-              affiliateStatus: 'pending',
-              dataSource: 'browser',
-              isActive: true,
-            },
           });
+
+          if (existingProduct) {
+            // UPDATING existing product
+            // Preserve commissionRate if extension sent 0 but existing product had a commission rate > 0
+            const finalCommRate = commRate > 0 ? commRate : (existingProduct.commissionRate || 0);
+            const finalEstComm = Math.round((salePrice * finalCommRate) / 100);
+            const finalAffScore = Math.min(100, Math.max(50, Math.round(finalCommRate * 4 + rating * 8)));
+
+            await db.product.update({
+              where: { id: existingProduct.id },
+              data: {
+                name,
+                image,
+                price: price > 0 ? price : existingProduct.price,
+                salePrice: salePrice > 0 ? salePrice : existingProduct.salePrice,
+                sold: Math.max(sold, existingProduct.sold),
+                rating,
+                originalUrl,
+                commissionRate: finalCommRate,
+                estCommission: finalEstComm,
+                affiliateScore: finalAffScore,
+                dataSource: 'browser',
+                isActive: true,
+                updatedAt: new Date(),
+              },
+            });
+            updatedCount++;
+          } else {
+            // CREATING new product
+            let estComm = Math.round((salePrice * commRate) / 100);
+            if (isNaN(estComm)) estComm = 0;
+
+            let affScore = Math.min(100, Math.max(50, Math.round(commRate * 4 + rating * 8)));
+            if (isNaN(affScore)) affScore = 85;
+
+            await db.product.create({
+              data: {
+                userId,
+                platform,
+                shopId: dbShop.id,
+                externalProductId: extProductId,
+                name,
+                image,
+                price,
+                salePrice,
+                sold,
+                rating,
+                originalUrl,
+                hasAffiliate: true,
+                commissionRate: commRate,
+                estCommission: estComm,
+                affiliateScore: affScore,
+                affiliateStatus: 'pending',
+                dataSource: 'browser',
+                isActive: true,
+              },
+            });
+            createdCount++;
+          }
 
           savedCount++;
         } catch (itemErr: any) {
@@ -148,7 +171,7 @@ export async function POST(
     const updatedJob = await db.scanJob.update({
       where: { id: scanJobId },
       data: {
-        totalProducts: { increment: savedCount },
+        totalProducts: { increment: createdCount },
         processedProducts: { increment: savedCount },
         processedShops: dbShop ? 1 : scanJob.processedShops,
         status: jobStatus,
@@ -209,12 +232,16 @@ export async function POST(
       }
     }
 
-    if (dbShop && savedCount > 0) {
+    if (dbShop) {
+      const actualProductCount = await db.product.count({ where: { shopId: dbShop.id } });
+      const actualAffCount = await db.product.count({ where: { shopId: dbShop.id, hasAffiliate: true } });
+
       await db.shop.update({
         where: { id: dbShop.id },
         data: {
-          productCount: { increment: savedCount },
-          affProductCount: { increment: savedCount },
+          productCount: actualProductCount,
+          affProductCount: actualAffCount,
+          lastSyncedAt: new Date(),
         },
       });
     }
@@ -223,6 +250,8 @@ export async function POST(
       success: true,
       scanJobId,
       savedCount,
+      createdCount,
+      updatedCount,
       totalProductsFound: updatedJob.totalProducts,
     });
   } catch (error: any) {

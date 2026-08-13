@@ -28,10 +28,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Get stored deviceToken
-  const stored = await chrome.storage.local.get(['deviceToken']);
+  // Get stored deviceToken & serverUrl
+  const serverSelect = document.getElementById('serverSelect');
+  const stored = await chrome.storage.local.get(['deviceToken', 'serverUrl']);
   if (stored.deviceToken) {
     deviceToken.innerText = `Device: ${stored.deviceToken.substring(0, 16)}...`;
+  }
+  if (stored.serverUrl && serverSelect) {
+    serverSelect.value = stored.serverUrl;
+  }
+  if (serverSelect) {
+    serverSelect.addEventListener('change', async (e) => {
+      const selectedUrl = e.target.value;
+      await chrome.storage.local.set({ serverUrl: selectedUrl });
+      chrome.runtime.sendMessage({ action: 'GET_STATUS' });
+    });
   }
 
   // Click Scan Shop Button

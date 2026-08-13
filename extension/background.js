@@ -1,6 +1,6 @@
 // AFF HUB Chrome Extension - Background Service Worker
 
-const DEFAULT_SERVER = 'https://affnhanh.vercel.app';
+const DEFAULT_SERVER = 'http://localhost:3000';
 let activeScanJob = null;
 
 // Get stored config or defaults

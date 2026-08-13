@@ -26,8 +26,8 @@ export async function POST(
 
     // 1. Upsert Shop Record
     let dbShop = null;
-    if (shop && shop.shopId) {
-      const extShopId = String(shop.shopId);
+    if (shop) {
+      const extShopId = String(shop.shopId || `shop_${Date.now()}`);
       const shopName = shop.name || `Shopee Store ${extShopId}`;
       const logo = shop.avatar || shop.logo || null;
       const shopUrl = shop.url || `https://shopee.vn/shop/${extShopId}`;
@@ -62,66 +62,84 @@ export async function POST(
     let savedCount = 0;
     if (Array.isArray(products) && products.length > 0 && dbShop) {
       for (const prod of products) {
-        if (!prod.productId || !prod.productName) continue;
+        if (!prod || (!prod.productId && !prod.itemId) || !prod.productName) continue;
 
-        const extProductId = String(prod.productId);
-        const name = String(prod.productName).trim();
-        const image = prod.productImage || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=300';
-        const price = Number(prod.price) || Number(prod.salePrice) || 0;
-        const salePrice = Number(prod.salePrice) || price;
-        const sold = Number(prod.soldCount) || Number(prod.sold) || 0;
-        const rating = Number(prod.rating) || 5.0;
-        const originalUrl = prod.productUrl || `https://shopee.vn/product/${dbShop.externalShopId}/${extProductId}`;
-        
-        const commRate = Number(prod.commissionRate) || (price > 0 ? Math.min(20, Math.max(3, Math.floor(Math.random() * 12) + 4)) : 5);
-        const estComm = Math.round((salePrice * commRate) / 100);
-        const affScore = Math.min(100, Math.max(50, Math.round(commRate * 4 + rating * 8)));
+        try {
+          const extProductId = String(prod.productId || prod.itemId || `prod_${Date.now()}_${Math.random()}`);
+          const name = String(prod.productName || prod.name || 'Unnamed Product').trim();
+          const image = prod.productImage || prod.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=300';
+          
+          let price = Number(prod.price) || Number(prod.salePrice) || 0;
+          if (isNaN(price)) price = 0;
 
-        await db.product.upsert({
-          where: {
-            platform_shopId_externalProductId: {
+          let salePrice = Number(prod.salePrice) || price;
+          if (isNaN(salePrice)) salePrice = price;
+
+          let sold = Number(prod.soldCount) || Number(prod.sold) || 0;
+          if (isNaN(sold)) sold = 0;
+
+          let rating = Number(prod.rating) || 5.0;
+          if (isNaN(rating)) rating = 5.0;
+
+          const originalUrl = prod.productUrl || prod.link || `https://shopee.vn/product/${dbShop.externalShopId}/${extProductId}`;
+          
+          let commRate = Number(prod.commissionRate) || (price > 0 ? Math.min(20, Math.max(3, Math.floor(Math.random() * 12) + 4)) : 5);
+          if (isNaN(commRate)) commRate = 5;
+
+          let estComm = Math.round((salePrice * commRate) / 100);
+          if (isNaN(estComm)) estComm = 0;
+
+          let affScore = Math.min(100, Math.max(50, Math.round(commRate * 4 + rating * 8)));
+          if (isNaN(affScore)) affScore = 85;
+
+          await db.product.upsert({
+            where: {
+              platform_shopId_externalProductId: {
+                platform,
+                shopId: dbShop.id,
+                externalProductId: extProductId,
+              },
+            },
+            update: {
+              name,
+              image,
+              price,
+              salePrice,
+              sold,
+              rating,
+              originalUrl,
+              commissionRate: commRate,
+              estCommission: estComm,
+              affiliateScore: affScore,
+              dataSource: 'browser',
+              isActive: true,
+            },
+            create: {
+              userId,
               platform,
               shopId: dbShop.id,
               externalProductId: extProductId,
+              name,
+              image,
+              price,
+              salePrice,
+              sold,
+              rating,
+              originalUrl,
+              hasAffiliate: true,
+              commissionRate: commRate,
+              estCommission: estComm,
+              affiliateScore: affScore,
+              affiliateStatus: 'pending',
+              dataSource: 'browser',
+              isActive: true,
             },
-          },
-          update: {
-            name,
-            image,
-            price,
-            salePrice,
-            sold,
-            rating,
-            originalUrl,
-            commissionRate: commRate,
-            estCommission: estComm,
-            affiliateScore: affScore,
-            dataSource: 'browser',
-            isActive: true,
-          },
-          create: {
-            userId,
-            platform,
-            shopId: dbShop.id,
-            externalProductId: extProductId,
-            name,
-            image,
-            price,
-            salePrice,
-            sold,
-            rating,
-            originalUrl,
-            hasAffiliate: true,
-            commissionRate: commRate,
-            estCommission: estComm,
-            affiliateScore: affScore,
-            affiliateStatus: 'pending',
-            dataSource: 'browser',
-            isActive: true,
-          },
-        });
+          });
 
-        savedCount++;
+          savedCount++;
+        } catch (itemErr: any) {
+          console.error(`[Extension Products Upsert Item Error]:`, itemErr?.message);
+        }
       }
     }
 
@@ -212,7 +230,7 @@ export async function POST(
   } catch (error: any) {
     console.error('[Extension Scans Products Error]:', error);
     return NextResponse.json(
-      { error: 'Không thể lưu sản phẩm từ Extension.' },
+      { error: error?.message || 'Không thể lưu sản phẩm từ Extension.' },
       { status: 500 }
     );
   }

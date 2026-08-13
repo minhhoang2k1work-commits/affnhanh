@@ -285,7 +285,7 @@ export default function ScannerPage() {
     setErrorMsg(null);
   };
 
-  const isJobRunning = jobData && ['queued', 'processing', 'resolving', 'scanning'].includes(jobData.status);
+  const isJobRunning = jobData && ['queued', 'processing', 'resolving', 'scanning', 'queued_for_extension'].includes(jobData.status);
 
   // Section 16: Commission Color Tier Badges
   const renderCommissionBadge = (rate: number) => {

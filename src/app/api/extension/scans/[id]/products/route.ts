@@ -148,15 +148,49 @@ export async function POST(
         data: { status: 'completed' },
       });
 
-      // Mark ScanJobItem as completed
+      // Mark ScanJobItem as completed — include shopId so scanner page can find it
       await db.scanJobItem.updateMany({
         where: { scanJobId: scanJobId },
         data: { 
           status: 'completed',
+          shopId: dbShop ? dbShop.externalShopId : undefined,
+          shopName: dbShop ? dbShop.name : undefined,
           productCount: savedCount,
           completedAt: new Date()
         },
       });
+    } else {
+      // For manual ext_ scans: create ScanJobItem if it doesn't exist,
+      // so the scanner page can discover the shop and load products
+      if (dbShop) {
+        const existingItem = await db.scanJobItem.findFirst({
+          where: { scanJobId: scanJobId },
+        });
+        if (!existingItem) {
+          await db.scanJobItem.create({
+            data: {
+              scanJobId: scanJobId,
+              shopUrl: dbShop.shopUrl || shop?.url || '',
+              shopId: dbShop.externalShopId,
+              shopName: dbShop.name,
+              status: 'completed',
+              productCount: savedCount,
+              completedAt: new Date(),
+            },
+          });
+        } else {
+          await db.scanJobItem.updateMany({
+            where: { scanJobId: scanJobId },
+            data: {
+              status: 'completed',
+              shopId: dbShop.externalShopId,
+              shopName: dbShop.name,
+              productCount: savedCount,
+              completedAt: new Date(),
+            },
+          });
+        }
+      }
     }
 
     if (dbShop && savedCount > 0) {

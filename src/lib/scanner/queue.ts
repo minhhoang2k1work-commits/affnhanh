@@ -114,6 +114,14 @@ async function processScanJob(jobId: string): Promise<void> {
   // Finalize Job Status
   const finalItems = await db.scanJobItem.findMany({ where: { scanJobId: jobId } });
   const failedItems = finalItems.filter((it) => it.status === 'failed' || it.status === 'invalid_url');
+  const pendingExtensionItems = finalItems.filter((it) => it.status === 'queued_for_extension' || it.status === 'scanning');
+
+  // If there are items still waiting for extension, don't finalize yet.
+  // The extension's /api/extension/scans/[id]/products callback will handle completion.
+  if (pendingExtensionItems.length > 0) {
+    console.log(`Scan Job ${jobId}: ${pendingExtensionItems.length} items waiting for extension. Not finalizing yet.`);
+    return;
+  }
 
   let finalStatus = 'completed';
   if (failedItems.length > 0 && failedItems.length < finalItems.length) {

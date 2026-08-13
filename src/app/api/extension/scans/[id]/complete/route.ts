@@ -14,11 +14,40 @@ export async function POST(
        return NextResponse.json({ error: 'ScanJob không tồn tại.' }, { status: 404 });
     }
 
+    // For web-initiated scans: Extension sends SCAN_COMPLETE before PRODUCTS_BATCH.
+    // Don't finalize if products haven't been pushed yet — the products endpoint will handle finalization.
+    const isExtensionOnly = scanJobId.startsWith('ext_');
+    const hasProducts = scanJob.totalProducts > 0 || scanJob.processedProducts > 0;
+
+    if (!isExtensionOnly && !hasProducts) {
+      // Products not yet pushed — leave job in processing state
+      // The /products endpoint will mark it completed when data arrives
+      console.log(`[Extension Complete] Job ${scanJobId}: No products yet, keeping processing state.`);
+      return NextResponse.json({
+        success: true,
+        status: scanJob.status,
+        totalProducts: scanJob.totalProducts,
+        message: 'Waiting for products push',
+      });
+    }
+
     const job = await db.scanJob.update({
       where: { id: scanJobId },
       data: {
         status: 'completed',
         progress: 100,
+        completedAt: new Date(),
+      },
+    });
+
+    // Also mark remaining pending ScanJobItems as completed
+    await db.scanJobItem.updateMany({
+      where: {
+        scanJobId: scanJobId,
+        status: { in: ['queued', 'resolving', 'scanning', 'queued_for_extension'] },
+      },
+      data: {
+        status: 'completed',
         completedAt: new Date(),
       },
     });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { sanitizePrice } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -93,10 +94,18 @@ export async function GET(req: NextRequest) {
       totalCount,
       affCount,
       nonAffCount: totalCount - affCount,
-      products: products.map((p) => ({
-        ...p,
-        affiliateUrl: p.affiliateLinks[0]?.affiliateUrl || null,
-      })),
+      products: products.map((p) => {
+        const cleanPrice = sanitizePrice(p.price);
+        const cleanSalePrice = sanitizePrice(p.salePrice);
+        const cleanEstComm = Math.round((cleanSalePrice * p.commissionRate) / 100);
+        return {
+          ...p,
+          price: cleanPrice,
+          salePrice: cleanSalePrice,
+          estCommission: cleanEstComm > 0 ? cleanEstComm : p.estCommission,
+          affiliateUrl: p.affiliateLinks[0]?.affiliateUrl || null,
+        };
+      }),
     });
   } catch (error: any) {
     console.error('Error fetching products:', error);

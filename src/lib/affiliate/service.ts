@@ -52,20 +52,25 @@ export class AffiliateLinkService {
         data: { affiliateStatus: 'pending' },
       });
 
-      // Queue a job for the extension to handle via DOM automation
+      // Queue a job for the extension to handle via Web Dashboard automation
       await db.extensionJob.create({
         data: {
           userId,
           type: 'GENERATE_AFFILIATE_LINK',
           productId: product.id,
-          payload: JSON.stringify({ productUrl: product.originalUrl }),
+          payload: JSON.stringify({
+            productUrl: product.originalUrl,
+            subIds: [subId],
+            productName: product.name,
+            method: 'web_dashboard', // Extension sẽ dùng affiliate.shopee.vn/offer/custom_link
+          }),
           status: 'queued',
         }
       });
 
       return {
         status: 'success',
-        errorMessage: 'Đã gửi yêu cầu tạo link cho Extension. Vui lòng đợi trong giây lát...',
+        errorMessage: 'Đã gửi yêu cầu tạo link qua Extension (Web Dashboard). Vui lòng đợi...',
       };
     }
 

@@ -322,38 +322,38 @@ export default function ScannerPage() {
     <div className="max-w-6xl mx-auto space-y-8 pb-12">
       {/* Toast Notification */}
       {toastMsg && (
-        <div className="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-xs shadow-2xl flex items-center gap-2 animate-bounce">
-          <Sparkles className="w-4 h-4 text-amber-300" />
-          <span>{toastMsg}</span>
+        <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-50 px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-xs shadow-2xl flex items-center gap-2 animate-bounce max-w-[90vw]">
+          <Sparkles className="w-4 h-4 text-amber-300 flex-shrink-0" />
+          <span className="truncate">{toastMsg}</span>
         </div>
       )}
 
       {/* Header */}
       <div className="text-center space-y-2">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs font-semibold">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-[11px] sm:text-xs font-semibold">
           <ScanLine className="w-3.5 h-3.5" />
           <span>Shop Scanner & Instant 1-Click Link Hub</span>
         </div>
-        <h1 className="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+        <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight">
           Quét Shop & Xem <span className="gradient-text">Sản Phẩm Instant</span>
         </h1>
-        <p className="text-slate-400 text-sm max-w-xl mx-auto">
+        <p className="text-slate-400 text-xs sm:text-sm max-w-xl mx-auto">
           Dán link shop → Thấy sản phẩm ngay → Thấy hoa hồng ước tính → Bấm LẤY LINK 1-Click → Tự copy clipboard.
         </p>
       </div>
 
       {/* Mode Switcher */}
       {!activeJobId && (
-        <div className="flex items-center justify-center gap-2 p-1.5 rounded-2xl bg-slate-900 border border-slate-800 w-fit mx-auto text-xs font-semibold">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-2 p-1.5 rounded-2xl bg-slate-900 border border-slate-800 w-full sm:w-fit mx-auto text-xs font-semibold">
           <button
             onClick={() => setIsBulkMode(false)}
-            className={`px-5 py-2 rounded-xl transition-all ${!isBulkMode ? 'gradient-shopee text-white shadow-glow' : 'text-slate-400 hover:text-white'}`}
+            className={`w-full sm:w-auto px-5 py-2 rounded-xl transition-all ${!isBulkMode ? 'gradient-shopee text-white shadow-glow' : 'text-slate-400 hover:text-white'}`}
           >
             Quét 1 Shop Single
           </button>
           <button
             onClick={() => setIsBulkMode(true)}
-            className={`px-5 py-2 rounded-xl transition-all ${isBulkMode ? 'gradient-shopee text-white shadow-glow' : 'text-slate-400 hover:text-white'}`}
+            className={`w-full sm:w-auto px-5 py-2 rounded-xl transition-all ${isBulkMode ? 'gradient-shopee text-white shadow-glow' : 'text-slate-400 hover:text-white'}`}
           >
             Quét Hàng Loạt – Bulk Import (Tối đa 50 Shop)
           </button>
@@ -362,7 +362,7 @@ export default function ScannerPage() {
 
       {/* Unconfigured Affiliate Account Warning */}
       {unconfiguredAff && (
-        <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in">
+        <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in">
           <div className="flex items-center gap-3">
             <KeyRound className="w-6 h-6 text-amber-400 flex-shrink-0" />
             <div>
@@ -382,27 +382,27 @@ export default function ScannerPage() {
 
       {/* Form Input Container */}
       {!activeJobId && (
-        <div className="glass-panel p-8 rounded-3xl space-y-6 relative overflow-hidden">
+        <div className="glass-panel p-4 sm:p-8 rounded-3xl space-y-6 relative overflow-hidden">
           {!isBulkMode ? (
             <form onSubmit={handleSubmitScan} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                   <span>DÁN LINK SHOP (Shopee / Shortlink)</span>
                   <span className="text-purple-400 normal-case font-normal text-xs">Ví dụ: https://shopee.vn/ten-shop</span>
                 </label>
-                <div className="relative">
+                <div className="flex flex-col sm:relative space-y-2 sm:space-y-0">
                   <input
                     type="text"
                     value={singleUrl}
                     onChange={(e) => setSingleUrl(e.target.value)}
                     placeholder="https://shopee.vn/locknlock_official_store hoặc s.shopee.vn/xxxx"
                     disabled={submitting}
-                    className="w-full bg-slate-950/90 border-2 border-slate-800 rounded-2xl pl-4 pr-36 py-4 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all font-mono"
+                    className="w-full bg-slate-950/90 border-2 border-slate-800 rounded-2xl pl-4 pr-4 sm:pr-36 py-3.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all font-mono"
                   />
                   <button
                     type="submit"
                     disabled={submitting || !singleUrl.trim()}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 px-6 py-2.5 rounded-xl gradient-shopee text-white font-bold text-xs shadow-glow hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-2"
+                    className="w-full sm:w-auto sm:absolute sm:right-2 sm:top-1/2 sm:-translate-y-1/2 px-6 py-2.5 rounded-xl gradient-shopee text-white font-bold text-xs shadow-glow hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                   >
                     {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanLine className="w-4 h-4" />}
                     <span>QUÉT SHOP</span>

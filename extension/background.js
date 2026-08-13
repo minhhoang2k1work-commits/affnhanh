@@ -105,8 +105,7 @@ async function startShopScanJob(job) {
 
 // Handle Affiliate Link Job
 async function startAffiliateLinkJob(job) {
-  const { serverUrl } = await getConfig();
-  const affUrl = `https://affiliate.shopee.vn/offer/product_offer`;
+  const affUrl = 'https://affiliate.shopee.vn/offer/custom_link';
   const tabs = await chrome.tabs.query({ url: '*://affiliate.shopee.vn/*' });
 
   let tab = tabs[0];
@@ -114,13 +113,53 @@ async function startAffiliateLinkJob(job) {
     tab = await chrome.tabs.create({ url: affUrl, active: true });
   }
 
-  setTimeout(() => {
-    chrome.tabs.sendMessage(tab.id, {
-      action: 'GENERATE_LINK',
-      jobId: job.id,
-      payload: job.payload,
+  const message = {
+    action: 'GENERATE_LINK',
+    jobId: job.id,
+    payload: {
+      productUrl: job.payload?.productUrl,
+      productUrls: job.payload?.productUrls,
+      subIds: job.payload?.subIds || [],
+    }
+  };
+
+  const sendMessageWithRetry = async (tabId, msg, retries = 3) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        await chrome.tabs.sendMessage(tabId, msg);
+        console.log('[AFF HUB Ext] Message sent to content script successfully');
+        return;
+      } catch (err) {
+        console.log(`[AFF HUB Ext] Send message failed (attempt ${i + 1}):`, err.message);
+        if (i < retries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    }
+    console.log('[AFF HUB Ext] Gave up sending message after retries');
+  };
+
+  // Wait for tab to be ready if not complete
+  if (tab.status !== 'complete') {
+    await new Promise((resolve) => {
+      let timeoutId;
+      const listener = (tabId, info) => {
+        if (tabId === tab.id && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(listener);
+          clearTimeout(timeoutId);
+          resolve();
+        }
+      };
+      chrome.tabs.onUpdated.addListener(listener);
+      timeoutId = setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(listener);
+        console.log('[AFF HUB Ext] Timeout waiting for tab to complete');
+        resolve();
+      }, 10000);
     });
-  }, 2000);
+  }
+
+  await sendMessageWithRetry(tab.id, message);
 }
 
 // Handle Messages from Content Script or Popup

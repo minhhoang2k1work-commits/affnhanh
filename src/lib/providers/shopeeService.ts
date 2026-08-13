@@ -43,8 +43,15 @@ export class ShopeeService {
       return { provider: this.browserAdapter, status: browserStatus };
     }
 
-    // Fallback to API adapter with diagnostic message
-    return { provider: this.apiAdapter, status: apiStatus };
+    // Fallback: Neither API nor Browser connected
+    // Extension Web Dashboard mode will handle via ExtensionJob queue
+    return {
+      provider: this.apiAdapter,
+      status: {
+        ...apiStatus,
+        message: apiStatus.message + ' Extension sẽ tạo link qua Web Dashboard (affiliate.shopee.vn).',
+      },
+    };
   }
 
   async getProductsFromShop(shopUrl: string, userId?: string, limit?: number): Promise<{ shopInfo: ShopInfo; products: ProductInfo[]; activeProvider: string }> {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { ensureExtensionScanJob } from '@/lib/scanner/queue';
+import { sanitizePrice } from '@/lib/utils';
 
 export async function POST(
   req: NextRequest,
@@ -69,11 +70,8 @@ export async function POST(
           const name = String(prod.productName || prod.name || 'Unnamed Product').trim();
           const image = prod.productImage || prod.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=300';
           
-          let price = Number(prod.price) || Number(prod.salePrice) || 0;
-          if (isNaN(price)) price = 0;
-
-          let salePrice = Number(prod.salePrice) || price;
-          if (isNaN(salePrice)) salePrice = price;
+          let price = sanitizePrice(Number(prod.price) || Number(prod.salePrice) || 0);
+          let salePrice = sanitizePrice(Number(prod.salePrice) || price);
 
           let sold = Number(prod.soldCount) || Number(prod.sold) || 0;
           if (isNaN(sold)) sold = 0;

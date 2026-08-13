@@ -17,7 +17,8 @@ import {
   Zap,
   CheckCircle2,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -77,11 +78,23 @@ const navItems = [
   },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const [dbStatus, setDbStatus] = useState<'connected' | 'error' | 'checking'>('checking');
   const [affStatus, setAffStatus] = useState<boolean>(false);
   const [extStatus, setExtStatus] = useState<string>('not_connected');
+
+  // Close mobile drawer on route change
+  useEffect(() => {
+    if (onClose) {
+      onClose();
+    }
+  }, [pathname]);
 
   useEffect(() => {
     // Real DB Health Check & Extension Health Check
@@ -114,11 +127,11 @@ export function Sidebar() {
       .catch(() => setAffStatus(false));
   }, []);
 
-  return (
-    <aside className="w-64 glass-panel border-r border-slate-800 flex flex-col h-screen sticky top-0 z-40 select-none">
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full select-none">
       {/* App Logo */}
       <div className="p-6 border-b border-slate-800/80 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-3 group">
+        <Link href="/" className="flex items-center gap-3 group" onClick={onClose}>
           <div className="w-10 h-10 rounded-xl gradient-brand flex items-center justify-center shadow-glow group-hover:scale-105 transition-transform duration-200">
             <Link2 className="w-5 h-5 text-white animate-pulse" />
           </div>
@@ -129,6 +142,17 @@ export function Sidebar() {
             <p className="text-[10px] text-slate-400 font-medium tracking-wider uppercase">Link Automation</p>
           </div>
         </Link>
+
+        {/* Mobile Drawer Close Button */}
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="md:hidden p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800/80 transition-colors"
+            aria-label="Đóng Menu"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        )}
       </div>
 
       {/* Quick Creator Badge */}
@@ -155,6 +179,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onClose}
               className={cn(
                 'flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group relative',
                 isActive
@@ -185,7 +210,7 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom Footer - Real Dynamic Health Status Badges (Section 8 Requirement) */}
+      {/* Bottom Footer - Real Dynamic Health Status Badges */}
       <div className="p-4 border-t border-slate-800/80 space-y-2">
         <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] space-y-1.5">
           <div className="flex items-center justify-between">
@@ -218,6 +243,31 @@ export function Sidebar() {
           </div>
         </div>
       </div>
-    </aside>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop Sidebar (hidden on mobile) */}
+      <aside className="hidden md:flex w-64 glass-panel border-r border-slate-800 flex-col h-screen sticky top-0 z-40">
+        <SidebarContent />
+      </aside>
+
+      {/* Mobile Drawer (visible on mobile when isOpen is true) */}
+      {isOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop Blur Overlay */}
+          <div
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-md transition-opacity animate-fade-in"
+            onClick={onClose}
+          />
+
+          {/* Drawer Body */}
+          <aside className="relative w-80 max-w-[85vw] bg-slate-950 border-r border-slate-800 shadow-2xl flex flex-col h-full z-10 overflow-hidden">
+            <SidebarContent />
+          </aside>
+        </div>
+      )}
+    </>
   );
 }

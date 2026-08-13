@@ -5,12 +5,23 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function sanitizePrice(amount: number): number {
+  if (!amount || isNaN(amount) || amount <= 0) return 0;
+  let val = amount;
+  // If price is Shopee micro-VND (e.g. 100,000 multiplier) or corrupt concatenated string (> 50,000,000 VND)
+  while (val > 50_000_000) {
+    val = Math.round(val / 100_000);
+  }
+  return val;
+}
+
 export function formatCurrency(amount: number): string {
+  const cleanAmount = sanitizePrice(amount);
   return new Intl.NumberFormat('vi-VN', {
     style: 'currency',
     currency: 'VND',
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(cleanAmount);
 }
 
 export function formatNumber(num: number): string {

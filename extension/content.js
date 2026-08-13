@@ -93,15 +93,28 @@
     };
   }
 
+  function sanitizePrice(amount) {
+    if (!amount || isNaN(amount) || amount <= 0) return 0;
+    let val = Number(amount);
+    while (val > 50000000) {
+      val = Math.round(val / 100000);
+    }
+    return val;
+  }
+
   function addProductToUI(product) {
     if (!uiList) return;
+    const cleanPrice = sanitizePrice(product.salePrice || product.price);
+    product.price = cleanPrice;
+    product.salePrice = cleanPrice;
+
     const item = document.createElement('div');
     item.style.cssText = `display: flex; gap: 8px; padding: 8px; border-bottom: 1px solid #1e293b; align-items: center;`;
     item.innerHTML = `
       <img src="${product.productImage}" style="width: 40px; height: 40px; border-radius: 4px; object-fit: cover; flex-shrink: 0;" />
       <div style="flex: 1; min-width: 0;">
         <div style="font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #e2e8f0;">${product.productName}</div>
-        <div style="font-size: 11px; color: #a855f7; font-weight: bold;">${product.salePrice.toLocaleString('vi-VN')}₫</div>
+        <div style="font-size: 11px; color: #a855f7; font-weight: bold;">${cleanPrice.toLocaleString('vi-VN')}₫</div>
       </div>
     `;
     uiList.prepend(item);
@@ -208,10 +221,41 @@
         const productImage = imgEl ? imgEl.src || imgEl.getAttribute('data-src') || '' : '';
 
         // Price
-        const priceEl = card.querySelector('.aria-label[aria-label*="₫"]') || card.querySelector('span[class*="price"]') || card;
-        const priceText = priceEl ? priceEl.innerText || '' : '';
-        const numbers = priceText.replace(/[^0-9]/g, '');
-        const salePrice = numbers ? parseInt(numbers.slice(0, 10), 10) : 0;
+        let salePrice = 0;
+        const priceSelectors = [
+          '[aria-label*="₫"]',
+          '[aria-label*="đ"]',
+          'span[class*="price"]',
+          'div[class*="price"]',
+          'span[class*="text-shopee"]',
+          'span[class*="font-medium"]',
+          '.text-emerald-400'
+        ];
+        for (const sel of priceSelectors) {
+          const el = card.querySelector(sel);
+          if (el) {
+            const txt = el.getAttribute('aria-label') || el.innerText || '';
+            const match = txt.match(/[\d\.,]+/);
+            if (match) {
+              const val = parseInt(match[0].replace(/[\.,]/g, ''), 10);
+              if (!isNaN(val) && val > 0) {
+                salePrice = sanitizePrice(val);
+                if (salePrice > 0) break;
+              }
+            }
+          }
+        }
+        if (!salePrice) {
+          const cardTxt = card.innerText || '';
+          const match = cardTxt.match(/(?:₫|đ|VND)\s*([\d\.,]+)|([\d\.,]+)\s*(?:₫|đ|VND)/i);
+          if (match) {
+            const rawStr = (match[1] || match[2] || '').replace(/[\.,]/g, '');
+            const val = parseInt(rawStr, 10);
+            if (!isNaN(val) && val > 0) {
+              salePrice = sanitizePrice(val);
+            }
+          }
+        }
 
         // Sold count
         const soldEl = card.querySelector('[class*="sold"]') || card;
@@ -320,35 +364,181 @@
     }
   }
 
+  // Helper: Layer 1 - GraphQL API Call
+  async function generateViaGraphQL(productUrl, subIds) {
+    console.log('[AFF HUB] Attempting GraphQL API cho việc tạo link...');
+    const bodyObj = { urls: [productUrl], subIds: subIds || [] };
+
+    try {
+      const response = await fetch('https://affiliate.shopee.vn/api/v3/gql?q=batchCustomLink', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(bodyObj)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      const jsonString = JSON.stringify(data);
+      const match = jsonString.match(/https:\/\/(?:s\.shopee\.vn|shp\.ee)\/[a-zA-Z0-9_-]+/);
+      if (match) {
+        return match[0];
+      }
+      throw new Error('GraphQL response did not contain a valid short link');
+    } catch (error) {
+      console.log('[AFF HUB] GraphQL attempt failed:', error.message);
+      throw error;
+    }
+  }
+
+  // Helper: Layer 2 - DOM Automation
+  async function generateViaDomAutomation(productUrl, subIds) {
+    console.log('[AFF HUB] Attempting DOM automation fallback...');
+    
+    if (!window.location.href.includes('custom_link')) {
+      console.log('[AFF HUB] Navigating to custom_link page...');
+      window.location.href = 'https://affiliate.shopee.vn/offer/custom_link';
+      // Return a special error to allow redirect
+      throw new Error('NAVIGATING_TO_CUSTOM_LINK');
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // 2. Find link input
+    const inputSelectors = 'textarea, input[placeholder*="http"], input[placeholder*="shopee"], input[type="text"]';
+    const linkInput = document.querySelector(inputSelectors);
+    
+    if (!linkInput) throw new Error('Không tìm thấy ô nhập link');
+    
+    // 3. Set value + dispatch events
+    linkInput.value = productUrl;
+    linkInput.dispatchEvent(new Event('input', { bubbles: true }));
+    linkInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+    // 4. Fill SubID inputs if provided
+    if (subIds && subIds.length > 0) {
+      const subInputs = document.querySelectorAll('input[placeholder*="Sub"], input[name*="sub"]');
+      subIds.forEach((subId, index) => {
+        if (subInputs[index]) {
+          subInputs[index].value = subId;
+          subInputs[index].dispatchEvent(new Event('input', { bubbles: true }));
+          subInputs[index].dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
+    }
+
+    // 5. Find and click generate button
+    const buttons = document.querySelectorAll('button');
+    let genBtn = null;
+    const btnTexts = ['Lấy Link', 'Chuyển đổi', 'Tạo Link', 'Generate'];
+    for (const btn of buttons) {
+      const text = btn.innerText?.trim() || '';
+      if (btnTexts.some(t => text.includes(t))) {
+        genBtn = btn;
+        break;
+      }
+    }
+
+    if (!genBtn) throw new Error('Không tìm thấy nút tạo link');
+    
+    genBtn.click();
+
+    // 6. Wait 2-3 seconds for result
+    await new Promise(resolve => setTimeout(resolve, 2500));
+
+    // 7. Extract result
+    const resultSelectors = 'input[value*="s.shopee.vn"], input[value*="shp.ee"], input[readonly], [class*="link-result"]';
+    const resultEls = document.querySelectorAll(resultSelectors);
+    let resultLink = null;
+
+    for (const el of resultEls) {
+      const val = el.value || el.innerText;
+      if (val && (val.includes('s.shopee.vn') || val.includes('shp.ee'))) {
+        resultLink = val;
+        break;
+      }
+    }
+
+    // 8. Try regex fallback on page content
+    if (!resultLink) {
+      const match = document.body.innerHTML.match(/https:\/\/(?:s\.shopee\.vn|shp\.ee)\/[a-zA-Z0-9_-]+/);
+      if (match) resultLink = match[0];
+    }
+
+    if (resultLink) return resultLink;
+    
+    throw new Error('Không thể lấy được link sau khi tạo');
+  }
+
   // Handle Extension Affiliate Helper (on affiliate.shopee.vn)
   async function handleAffiliateLinkGeneration(jobId, payload) {
     console.log('[AFF HUB] Generating link for job:', jobId, payload);
-    // Find link input field on Shopee Affiliate Page
+    const { productUrl, subIds } = payload || {};
+    
+    if (!productUrl) {
+      return chrome.runtime.sendMessage({
+        action: 'AFFILIATE_RESULT',
+        jobId,
+        error: 'No product URL provided'
+      });
+    }
+
+    // Check Auth/Verification states first
+    const currentUrl = window.location.href;
+    const pageContent = document.body.innerText.toLowerCase();
+    
+    if (currentUrl.includes('/login')) {
+      return chrome.runtime.sendMessage({
+        action: 'AFFILIATE_RESULT',
+        jobId,
+        error: 'SHOPEE_AUTH_REQUIRED'
+      });
+    }
+
+    if (currentUrl.includes('/verify') || pageContent.includes('captcha')) {
+      return chrome.runtime.sendMessage({
+        action: 'AFFILIATE_RESULT',
+        jobId,
+        error: 'SHOPEE_VERIFICATION_REQUIRED'
+      });
+    }
+
+    // Timeout mechanism (15 seconds)
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('BROWSER_TIMEOUT')), 15000);
+    });
+
     try {
-      const inputEl = document.querySelector('input[placeholder*="http"]') || document.querySelector('textarea');
-      if (inputEl && payload?.productUrl) {
-        inputEl.value = payload.productUrl;
-        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      const generateTask = async () => {
+        try {
+          // Layer 1: GraphQL API
+          return await generateViaGraphQL(productUrl, subIds);
+        } catch (gqlError) {
+          // Layer 2: DOM Automation fallback
+          return await generateViaDomAutomation(productUrl, subIds);
+        }
+      };
 
-        const btn = document.querySelector('button:not([disabled])');
-        if (btn) btn.click();
-
-        await new Promise((r) => setTimeout(r, 2000));
-
-        const resultEl = document.querySelector('[class*="link-result"]') || document.querySelector('input[readonly]');
-        const generatedLink = resultEl ? resultEl.value || resultEl.innerText : payload.productUrl;
-
-        chrome.runtime.sendMessage({
-          action: 'AFFILIATE_RESULT',
-          jobId,
-          affiliateUrl: generatedLink,
-        });
-      }
-    } catch (err) {
+      const generatedLink = await Promise.race([generateTask(), timeoutPromise]);
+      
       chrome.runtime.sendMessage({
         action: 'AFFILIATE_RESULT',
         jobId,
-        error: err.message,
+        affiliateUrl: generatedLink
+      });
+
+    } catch (err) {
+      console.error('[AFF HUB] Link generation failed:', err);
+      // Let background handle navigation state if needed or report error
+      chrome.runtime.sendMessage({
+        action: 'AFFILIATE_RESULT',
+        jobId,
+        error: err.message === 'NAVIGATING_TO_CUSTOM_LINK' ? 'NAVIGATING' : err.message,
       });
     }
   }

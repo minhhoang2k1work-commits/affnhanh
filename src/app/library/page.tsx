@@ -19,12 +19,26 @@ import {
   Store,
   KeyRound,
   RefreshCw,
-  Zap
+  Zap,
+  TrendingUp,
+  Package,
+  DollarSign,
+  BarChart3
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 export const dynamic = 'force-dynamic';
+
+// Helper: Classify sold tier for potential analysis
+function getSoldTier(sold: number): { label: string; emoji: string; color: string; bgColor: string } {
+  if (sold >= 10000) return { label: 'Siêu Hot', emoji: '🔥', color: 'text-rose-400', bgColor: 'bg-rose-500/20' };
+  if (sold >= 5000) return { label: 'Hot', emoji: '🔥', color: 'text-orange-400', bgColor: 'bg-orange-500/20' };
+  if (sold >= 1000) return { label: 'Bán tốt', emoji: '⚡', color: 'text-amber-400', bgColor: 'bg-amber-500/20' };
+  if (sold >= 200) return { label: 'Ổn định', emoji: '✅', color: 'text-emerald-400', bgColor: 'bg-emerald-500/20' };
+  if (sold >= 50) return { label: 'Mới', emoji: '🌱', color: 'text-blue-400', bgColor: 'bg-blue-500/20' };
+  return { label: 'Chậm', emoji: '💤', color: 'text-slate-500', bgColor: 'bg-slate-800' };
+}
 
 function LibraryContent() {
   const searchParams = useSearchParams();
@@ -192,9 +206,9 @@ function LibraryContent() {
     <div className="space-y-6 pb-12">
       {/* Toast Notification */}
       {toastMsg && (
-        <div className="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-xs shadow-2xl flex items-center gap-2 animate-bounce">
-          <Sparkles className="w-4 h-4 text-amber-300" />
-          <span>{toastMsg}</span>
+        <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-50 px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-xs shadow-2xl flex items-center gap-2 animate-bounce max-w-[90vw]">
+          <Sparkles className="w-4 h-4 text-amber-300 flex-shrink-0" />
+          <span className="truncate">{toastMsg}</span>
         </div>
       )}
 
@@ -378,16 +392,50 @@ function LibraryContent() {
                   <h3 className="text-xs font-bold text-white line-clamp-2 leading-relaxed">{p.name}</h3>
                 </div>
 
-                <div className="pt-2 border-t border-slate-800/80 space-y-1">
+                <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                  {/* Row 1: Price */}
                   <div className="flex items-baseline justify-between">
                     <span className="text-base font-black text-emerald-400">{formatCurrency(p.salePrice)}</span>
                     <span className="text-[11px] text-slate-500 line-through">{formatCurrency(p.price)}</span>
                   </div>
+
+                  {/* Row 2: Sold + Sold Tier Badge */}
+                  {(() => {
+                    const tier = getSoldTier(p.sold);
+                    return (
+                      <div className="flex items-center justify-between text-[11px]">
+                        <div className="flex items-center gap-1.5 text-slate-300">
+                          <Package className="w-3 h-3 text-slate-500" />
+                          <span>Đã bán: <span className="font-bold text-white">{formatNumber(p.sold)}</span></span>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${tier.bgColor} ${tier.color}`}>
+                          {tier.emoji} {tier.label}
+                        </span>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Row 3: Revenue + Rating */}
                   <div className="flex items-center justify-between text-[11px] text-slate-400">
-                    <span>Đã bán: {formatNumber(p.sold)}</span>
+                    <div className="flex items-center gap-1" title="Doanh thu ước tính = Đã bán × Giá bán">
+                      <TrendingUp className="w-3 h-3 text-purple-400" />
+                      <span>DT: <span className="text-purple-300 font-semibold">{formatCurrency(p.sold * p.salePrice)}</span></span>
+                    </div>
                     <span className="text-amber-300 flex items-center gap-0.5">
                       <Star className="w-3 h-3 fill-amber-300" /> {p.rating}
                     </span>
+                  </div>
+
+                  {/* Row 4: Commission Analytics */}
+                  <div className="p-2 rounded-lg bg-slate-950/80 border border-slate-800/60 grid grid-cols-2 gap-2 text-[10px]">
+                    <div className="text-slate-400" title="HH ước tính mỗi đơn">
+                      <span className="block text-slate-500">HH/đơn</span>
+                      <span className="text-emerald-400 font-bold text-[11px]">~{formatCurrency(Math.round(p.salePrice * p.commissionRate / 100))}</span>
+                    </div>
+                    <div className="text-slate-400 text-right" title="Tổng HH tiềm năng = Đã bán × HH/đơn">
+                      <span className="block text-slate-500">Tổng HH tiềm năng</span>
+                      <span className="text-amber-300 font-bold text-[11px]">~{formatCurrency(Math.round(p.sold * p.salePrice * p.commissionRate / 100))}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -449,14 +497,24 @@ function LibraryContent() {
                 </th>
                 <th className="p-3">Sản Phẩm</th>
                 <th className="p-3">Giá Bán</th>
-                <th className="p-3">Hoa Hồng %</th>
+                <th className="p-3">Đã Bán</th>
+                <th className="p-3">Mức Bán</th>
+                <th className="p-3">Doanh Thu ƯT</th>
+                <th className="p-3">HH %</th>
+                <th className="p-3">HH/Đơn</th>
+                <th className="p-3">Tổng HH Tiềm Năng</th>
                 <th className="p-3">Score</th>
-                <th className="p-3">Trạng Thái Aff</th>
+                <th className="p-3">Trạng Thái</th>
                 <th className="p-3">Thao Tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {products.map((p) => (
+              {products.map((p) => {
+                const tier = getSoldTier(p.sold);
+                const commPerOrder = Math.round(p.salePrice * p.commissionRate / 100);
+                const estRevenue = p.sold * p.salePrice;
+                const totalCommPotential = Math.round(p.sold * p.salePrice * p.commissionRate / 100);
+                return (
                 <tr key={p.id} className="hover:bg-slate-800/40 transition-colors">
                   <td className="p-3">
                     <input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => toggleSelect(p.id)} />
@@ -471,7 +529,18 @@ function LibraryContent() {
                     </div>
                   </td>
                   <td className="p-3 font-semibold text-emerald-400">{formatCurrency(p.salePrice)}</td>
+                  <td className="p-3 font-bold text-white">{formatNumber(p.sold)}</td>
+                  <td className="p-3">
+                    <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] whitespace-nowrap ${tier.bgColor} ${tier.color}`}>
+                      {tier.emoji} {tier.label}
+                    </span>
+                  </td>
+                  <td className="p-3 text-purple-300 font-semibold" title={`${p.sold} × ${formatCurrency(p.salePrice)}`}>{formatCurrency(estRevenue)}</td>
                   <td className="p-3 font-bold text-purple-300">{p.commissionRate}%</td>
+                  <td className="p-3 text-emerald-400 font-semibold">~{formatCurrency(commPerOrder)}</td>
+                  <td className="p-3 text-amber-300 font-bold" title={`${formatNumber(p.sold)} đơn × ~${formatCurrency(commPerOrder)}/đơn`}>
+                    ~{formatCurrency(totalCommPotential)}
+                  </td>
                   <td className="p-3">
                     <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold">
                       {p.affiliateScore}
@@ -509,7 +578,8 @@ function LibraryContent() {
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

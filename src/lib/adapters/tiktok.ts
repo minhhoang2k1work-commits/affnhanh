@@ -1,6 +1,5 @@
 import crypto from 'crypto';
 import { MarketplaceAdapter, ResolvedUrlResult, ShopInfo, ProductInfo, GenerateAffiliateLinkInput } from './base';
-import { calculateAffiliateScore } from '../utils';
 
 export interface ExtendedTikTokShopInfo extends ShopInfo {
   metadata: {

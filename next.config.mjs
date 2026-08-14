@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  serverExternalPackages: ['playwright', 'ffmpeg-static'],
   images: {
     remotePatterns: [
       {
@@ -13,6 +14,22 @@ const nextConfig = {
       {
         protocol: 'https',
         hostname: 'images.unsplash.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.tiktokcdn.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.tiktokcdn-us.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.byteoversea.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.ibytedtos.com',
       },
     ],
   },

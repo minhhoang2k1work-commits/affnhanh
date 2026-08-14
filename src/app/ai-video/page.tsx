@@ -16,6 +16,8 @@ import {
   Sparkles,
   ArrowRight,
   RefreshCw,
+  CloudUpload,
+  CheckCircle,
 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { VideoStudioForm, ProjectFormData } from '@/components/ai-video/VideoStudioForm';
@@ -36,13 +38,14 @@ export default function AIVideoStudioPage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [processingProjects, setProcessingProjects] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [driveReady, setDriveReady] = useState<boolean | null>(null);
 
   // Fetch projects
   const fetchProjects = useCallback(async () => {
     try {
       const [allRes, processingRes] = await Promise.all([
         fetch('/api/ai-video?limit=20&status=completed'),
-        fetch('/api/ai-video?limit=20&status=generating_video,scripting,storyboarding,generating_images,generating_voiceover,assembling'),
+        fetch('/api/ai-video?limit=20&status=generating_video,scripting,storyboarding,generating_images,generating_voiceover,assembling,archiving'),
       ]);
       if (allRes.ok) {
         const data = await allRes.json();
@@ -59,6 +62,10 @@ export default function AIVideoStudioPage() {
 
   useEffect(() => {
     fetchProjects();
+    fetch('/api/automation/readiness')
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => setDriveReady(Boolean(data?.checks?.driveStorage)))
+      .catch(() => setDriveReady(false));
   }, [fetchProjects]);
 
   // Auto-refresh processing projects
@@ -195,6 +202,35 @@ export default function AIVideoStudioPage() {
           </div>
         </div>
       </motion.div>
+
+      <div className={cn(
+        'rounded-2xl border p-4 flex flex-col md:flex-row md:items-center gap-3',
+        driveReady
+          ? 'bg-blue-500/10 border-blue-500/30'
+          : 'bg-amber-500/10 border-amber-500/30',
+      )}>
+        <div className={cn(
+          'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
+          driveReady ? 'bg-blue-500/20 text-blue-300' : 'bg-amber-500/20 text-amber-300',
+        )}>
+          {driveReady ? <CheckCircle className="w-5 h-5" /> : <CloudUpload className="w-5 h-5" />}
+        </div>
+        <div className="min-w-0">
+          <p className="font-semibold">
+            Google Drive: {driveReady === null ? 'Đang kiểm tra...' : driveReady ? 'Đã kết nối' : 'Chưa cấu hình'}
+          </p>
+          <p className="text-sm text-slate-400 mt-0.5">
+            {driveReady
+              ? 'Video hoàn tất sẽ tự động lưu riêng tư vào Google Drive để bạn tự đăng.'
+              : 'Cấu hình GOOGLE_DRIVE_CLIENT_ID, CLIENT_SECRET và REFRESH_TOKEN trong .env để bật tự động lưu.'}
+          </p>
+        </div>
+        {driveReady && (
+          <span className="md:ml-auto px-3 py-1.5 rounded-lg bg-blue-500/15 text-blue-300 text-xs font-semibold whitespace-nowrap">
+            Tự động lưu đang bật
+          </span>
+        )}
+      </div>
 
       {/* Tab Navigation */}
       <div className="flex gap-1 p-1 bg-slate-900/60 rounded-xl border border-slate-800">

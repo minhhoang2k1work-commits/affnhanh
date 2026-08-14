@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import { CATEGORY_OPTIONS, TARGET_CUSTOMER_OPTIONS } from '@/lib/constants';
+import { AddToCollectionModal } from '@/components/collections/AddToCollectionModal';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,6 +86,10 @@ function LibraryContent() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [generatingBulk, setGeneratingBulk] = useState(false);
+
+  const [isAddToColOpen, setIsAddToColOpen] = useState(false);
+  const [colTargetProductIds, setColTargetProductIds] = useState<string[]>([]);
+  const [colTargetProductNames, setColTargetProductNames] = useState<string[]>([]);
 
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [newCommRate, setNewCommRate] = useState<string>('');
@@ -810,6 +815,17 @@ function LibraryContent() {
               <span>TẠO AFF LINK</span>
             </button>
             <button
+              onClick={() => {
+                setColTargetProductIds(selectedIds);
+                setColTargetProductNames([]);
+                setIsAddToColOpen(true);
+              }}
+              className="px-4 py-2 rounded-xl bg-purple-600/40 border border-purple-500/50 hover:bg-purple-600 text-white font-extrabold text-xs transition-all flex items-center gap-1.5"
+            >
+              <FolderPlus className="w-3.5 h-3.5 text-purple-300" />
+              <span>VÀO BỘ SƯU TẬP ({selectedIds.length})</span>
+            </button>
+            <button
               onClick={handleCopySelectedLinks}
               className="px-4 py-2 rounded-xl bg-white text-purple-950 font-extrabold text-xs shadow hover:bg-slate-100 transition-all flex items-center gap-1.5"
             >
@@ -1056,7 +1072,7 @@ function LibraryContent() {
                     </button>
                   )}
 
-                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                  <div className="grid grid-cols-3 gap-1.5 text-[11px]">
                     <a
                       href={p.originalUrl}
                       target="_blank"
@@ -1072,6 +1088,18 @@ function LibraryContent() {
                     >
                       <Copy className="w-3 h-3" />
                       <span>Link Gốc</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setColTargetProductIds([p.id]);
+                        setColTargetProductNames([p.name]);
+                        setIsAddToColOpen(true);
+                      }}
+                      className="p-1.5 rounded-lg bg-slate-900 border border-purple-500/30 text-purple-300 hover:bg-purple-600 hover:text-white flex items-center justify-center gap-1 transition-all"
+                      title="Thêm vào Bộ Sưu Tập"
+                    >
+                      <FolderPlus className="w-3 h-3" />
+                      <span>+BST</span>
                     </button>
                   </div>
                 </div>
@@ -1193,6 +1221,17 @@ function LibraryContent() {
                       title="Chỉnh sửa tỷ lệ hoa hồng"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setColTargetProductIds([p.id]);
+                        setColTargetProductNames([p.name]);
+                        setIsAddToColOpen(true);
+                      }}
+                      className="ml-1 p-1.5 rounded-lg bg-slate-800 hover:bg-purple-600 text-purple-300 hover:text-white transition-all inline-flex items-center"
+                      title="Thêm vào Bộ Sưu Tập"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5" />
                     </button>
                   </td>
                 </tr>
@@ -1340,6 +1379,17 @@ function LibraryContent() {
           </div>
         </div>
       )}
+
+      {/* Add To Collection Modal */}
+      <AddToCollectionModal
+        isOpen={isAddToColOpen}
+        productIds={colTargetProductIds}
+        productNames={colTargetProductNames}
+        onClose={() => setIsAddToColOpen(false)}
+        onSuccess={(collectionName) => {
+          showToast(`Đã thêm vào bộ sưu tập "${collectionName}"!`);
+        }}
+      />
     </div>
   );
 }

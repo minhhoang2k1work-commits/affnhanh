@@ -2,8 +2,6 @@ import { db } from '@/lib/db';
 import { encryptText, decryptText } from '@/lib/crypto';
 import { AccesstradeAdapter } from '@/lib/adapters/accesstrade';
 
-export const DEFAULT_ACCESSTRADE_KEY = 'o5jpDvrsJXiKkMabUkrom0YSsPn_7eP3';
-
 export class AccesstradeService {
   private static adapter = new AccesstradeAdapter();
 
@@ -25,7 +23,8 @@ export class AccesstradeService {
   }
 
   /**
-   * Get active Accesstrade API Key from DB or fallback to default
+   * Get the configured Accesstrade API key. Never seed or fall back to a
+   * credential embedded in source code.
    */
   static async getActiveApiKey(userId?: string): Promise<string> {
     const defaultUser = await this.getOrCreateDefaultUser();
@@ -39,28 +38,8 @@ export class AccesstradeService {
       },
     });
 
-    if (acc) {
-      try {
-        return decryptText(acc.appSecretEnc);
-      } catch {
-        return acc.appSecretEnc || DEFAULT_ACCESSTRADE_KEY;
-      }
-    }
-
-    // Auto seed account with provided user API key
-    await db.affiliateAccount.create({
-      data: {
-        userId: targetUserId,
-        platform: 'ACCESSTRADE',
-        accountName: 'Accesstrade Official API',
-        appId: 'accesstrade_publisher',
-        appSecretEnc: encryptText(DEFAULT_ACCESSTRADE_KEY),
-        isDefault: true,
-        status: 'ACTIVE',
-      },
-    });
-
-    return DEFAULT_ACCESSTRADE_KEY;
+    if (!acc?.appSecretEnc) throw new Error('Accesstrade API key is not configured.');
+    return decryptText(acc.appSecretEnc);
   }
 
   /**

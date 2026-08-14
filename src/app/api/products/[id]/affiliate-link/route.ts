@@ -6,10 +6,10 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await req.json().catch(() => ({}));
     const { subId = 'HUB_SINGLE_LINK' } = body;
 

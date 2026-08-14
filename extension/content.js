@@ -3,6 +3,16 @@
 (function () {
   console.log('[AFF HUB Content Script] Loaded on:', window.location.href);
 
+  // Auto-sync serverUrl and handshake when user is on AFF HUB Web App
+  if (!window.location.hostname.includes('shopee.vn')) {
+    const currentOrigin = window.location.origin;
+    chrome.runtime.sendMessage({ action: 'SYNC_SERVER_URL', serverUrl: currentOrigin });
+    window.postMessage({ type: 'AFF_EXTENSION_INSTALLED', version: '1.0.0', status: 'ready' }, '*');
+    document.documentElement.setAttribute('data-aff-extension-installed', 'true');
+    console.log('[AFF HUB Extension] Auto-paired with web app origin:', currentOrigin);
+    return;
+  }
+
   let isScanning = false;
   let currentScanJobId = null;
   let collectedProductKeys = new Set();

@@ -26,6 +26,10 @@ model User {
   shops             Shop[]
   products          Product[]
   scanJobs          ScanJob[]
+  // AI Video & Flow Engine
+  aiProviders       AIProvider[]
+  videoProjects     AIVideoProject[]
+  flowRuns          FlowRun[]
 }
 
 model AffiliateAccount {
@@ -97,6 +101,7 @@ model Product {
   stock                Int                 @default(100)
   originalUrl          String
   category             String?
+  targetCustomer       String?             // Đối tượng khách hàng mục tiêu
   affiliateScore       Int                 @default(85) // Calculated Score (0-100)
   hasAffiliate         Boolean             @default(true)
   affiliateStatus      String              @default("pending") // pending, processing, success, not_eligible, pending_configuration, failed
@@ -123,6 +128,8 @@ model Product {
   affiliateLinks       AffiliateLink[]
   collectionProducts   CollectionProduct[]
   videoProducts        VideoProduct[]
+  // AI Video Projects
+  videoProjects        AIVideoProject[]
 
   @@unique([platform, shopId, externalProductId])
   @@index([name])
@@ -130,6 +137,8 @@ model Product {
   @@index([externalProductId])
   @@index([affiliateScore])
   @@index([userId])
+  @@index([category])
+  @@index([targetCustomer])
 }
 
 model ScanJob {
@@ -295,4 +304,186 @@ model SyncJob {
   errorMessage   String?
   startedAt      DateTime  @default(now())
   completedAt    DateTime?
+}
+
+// ========================================
+// AI VIDEO GENERATION & FLOW ENGINE
+// ========================================
+
+model AIProvider {
+  id                  String   @id @default(uuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name                String   // "openai", "chatgpt", "google_veo", "kling", "runway", "elevenlabs"
+  type                String   // "llm", "video", "image", "voiceover"
+  mode                String   @default("api") // "api" | "browser"
+  apiKeyEnc           String?  // AES-256-GCM encrypted (nullable for browser mode)
+  isActive            Boolean  @default(true)
+  config              Json?    // Provider-specific config
+
+  // Browser mode fields
+  browserSessionPath  String?  // Path to encrypted session file
+  browserSessionValid Boolean  @default(false)
+  lastSessionCheck    DateTime?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model AIVideoProject {
+  id                  String   @id @default(uuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId           String?
+  product             Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  title               String
+  status              String   @default("draft")
+  // "draft" | "scripting" | "storyboarding" | "generating_images"
+  // | "generating_video" | "generating_voiceover" | "assembling"
+  // | "completed" | "failed"
+
+  // Input
+  productDescription  String?  @db.Text
+  productImages       Json?    // Array of image URLs
+  style               String   @default("professional")
+  // "professional" | "trendy" | "minimal" | "energetic" | "luxury"
+  duration            Int      @default(30) // target duration in seconds
+  language            String   @default("vi")
+
+  // AI Generated Content
+  script              Json?    // ChatGPT generated script
+  storyboard          Json?    // Structured storyboard scenes
+
+  // Output
+  videoUrl            String?
+  thumbnailUrl        String?
+  videoDuration       Int?     // actual duration in seconds
+  estimatedCost       Float?   // USD
+  actualCost          Float?   // USD
+
+  // Provider tracking
+  llmProvider         String?  // which LLM was used
+  videoProvider       String?  // which video API was used
+  voiceProvider       String?  // which TTS was used
+
+  errorMessage        String?  @db.Text
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  scenes              AIVideoScene[]
+  flowRun             FlowRun?
+
+  @@index([userId])
+  @@index([status])
+}
+
+model AIVideoScene {
+  id                  String         @id @default(uuid())
+  projectId           String
+  project             AIVideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  sceneNumber         Int
+  visualPrompt        String   @db.Text
+  narration           String?  @db.Text
+  cameraAngle         String?
+  duration            Int      @default(5)
+  transition          String   @default("fade")
+
+  // Generated assets
+  referenceImageUrl   String?
+  videoClipUrl        String?
+  voiceoverUrl        String?
+
+  status              String   @default("pending")
+  // "pending" | "generating_image" | "generating_video" | "generating_voice"
+  // | "completed" | "failed"
+
+  errorMessage        String?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+model FlowTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  category    String   // "video_generation", "content_creation", "marketing"
+  isSystem    Boolean  @default(false)
+
+  // Flow definition as JSON
+  // Each step: { id, type, name, config, dependencies[] }
+  steps       Json
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  runs        FlowRun[]
+}
+
+model FlowRun {
+  id              String          @id @default(uuid())
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateId      String
+  template        FlowTemplate   @relation(fields: [templateId], references: [id])
+  videoProjectId  String?        @unique
+  videoProject    AIVideoProject? @relation(fields: [videoProjectId], references: [id], onDelete: SetNull)
+
+  status          String   @default("pending")
+  // "pending" | "running" | "paused" | "completed" | "failed" | "cancelled"
+
+  inputData       Json?
+  outputData      Json?
+  currentStepId   String?
+  progress        Int      @default(0)
+
+  startedAt       DateTime?
+  completedAt     DateTime?
+  errorMessage    String?  @db.Text
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  stepRuns        FlowStepRun[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model FlowStepRun {
+  id          String   @id @default(uuid())
+  runId       String
+  run         FlowRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  stepId      String
+  stepType    String   // "llm_script", "llm_storyboard", "generate_image",
+                       // "generate_video", "generate_voice", "assemble", "notify"
+  stepName    String
+
+  status      String   @default("pending")
+  // "pending" | "running" | "completed" | "failed" | "skipped"
+
+  inputData   Json?
+  outputData  Json?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  duration    Int?
+  cost        Float?
+  retryCount  Int      @default(0)
+  errorMessage String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([runId])
 }

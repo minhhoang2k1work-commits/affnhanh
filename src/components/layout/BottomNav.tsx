@@ -8,6 +8,7 @@ import {
   ScanLine, 
   ShoppingBag, 
   Link2,
+  Clapperboard,
   Menu 
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -37,9 +38,9 @@ export function BottomNav({ onOpenMobileMenu }: BottomNavProps) {
       isSpecial: true,
     },
     {
-      name: 'Tạo Link',
-      href: '/link-generator',
-      icon: Link2,
+      name: 'AI Video',
+      href: '/ai-video',
+      icon: Clapperboard,
     },
   ];
 

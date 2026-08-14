@@ -1,0 +1,31 @@
+export const CATEGORY_OPTIONS = [
+  'Thời trang nữ',
+  'Thời trang nam',
+  'Mỹ phẩm & Làm đẹp',
+  'Đồ gia dụng',
+  'Điện tử & Công nghệ',
+  'Thực phẩm & Đồ uống',
+  'Mẹ & Bé',
+  'Sức khỏe & Y tế',
+  'Phụ kiện & Trang sức',
+  'Đồ chơi & Trẻ em',
+  'Thể thao & Dã ngoại',
+  'Thú cưng',
+  'Ô tô & Xe máy',
+  'Sách & Văn phòng phẩm',
+  'Nhà cửa & Đời sống',
+  'Khác',
+];
+
+export const TARGET_CUSTOMER_OPTIONS = [
+  'Sinh viên / Gen Z',
+  'Phụ nữ văn phòng',
+  'Bà mẹ bỉm sữa',
+  'Nam giới',
+  'Người cao tuổi',
+  'Gia đình',
+  'Dân văn phòng',
+  'Teen / Học sinh',
+  'Tất cả mọi người',
+  'Khác',
+];

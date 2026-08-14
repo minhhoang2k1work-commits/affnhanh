@@ -42,9 +42,10 @@ export class AccesstradeAdapter {
     const url = `${this.baseUrl}${endpoint}`;
     const res = await fetch(url, {
       ...options,
+      signal: options.signal || AbortSignal.timeout(15_000),
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `token ${apiKey}`,
+        'Authorization': `Token ${apiKey}`,
         ...(options.headers || {}),
       },
     });
@@ -199,17 +200,24 @@ export class AccesstradeAdapter {
   async getOrders(
     apiKey: string,
     params: { since?: string; until?: string; page?: number; limit?: number } = {}
-  ): Promise<{ data: any[]; page: number; total_page: number }> {
-    const { since, until, page = 1, limit = 50 } = params;
-    let query = `/orders?limit=${limit}&page=${page}`;
-    if (since) query += `&since=${encodeURIComponent(since)}`;
-    if (until) query += `&until=${encodeURIComponent(until)}`;
-
-    try {
-      return await this.request<{ data: any[]; page: number; total_page: number }>(query, apiKey);
-    } catch {
-      // Fallback if orders endpoint differs
-      return { data: [], page: 1, total_page: 0 };
-    }
+  ): Promise<{ data: any[]; page: number; total: number; total_page: number }> {
+    const until = params.until || new Date().toISOString();
+    const since = params.since || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const page = params.page || 1;
+    const limit = Math.min(Math.max(params.limit || 100, 1), 300);
+    const query = `/order-list?limit=${limit}&page=${page}&since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}`;
+    const response = await this.request<{ data?: any[]; total?: number }>(query, apiKey);
+    const total = asFiniteNumber(response.total);
+    return {
+      data: Array.isArray(response.data) ? response.data : [],
+      page,
+      total,
+      total_page: Math.max(Math.ceil(total / limit), 1),
+    };
   }
+}
+
+function asFiniteNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }

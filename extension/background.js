@@ -165,7 +165,12 @@ async function startAffiliateLinkJob(job) {
 // Handle Messages from Content Script or Popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
-    const { serverUrl } = await getConfig();
+    if (message.action === 'SYNC_SERVER_URL' && message.serverUrl) {
+      await chrome.storage.local.set({ serverUrl: message.serverUrl, userSetServer: true });
+      await ensurePaired();
+      sendResponse({ ok: true, serverUrl: message.serverUrl });
+      return;
+    }
 
     if (message.action === 'PRODUCTS_BATCH') {
       const { scanJobId, shop, products } = message;

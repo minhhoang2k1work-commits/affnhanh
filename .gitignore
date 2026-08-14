@@ -21,6 +21,14 @@ yarn-error.log*
 # prisma local database
 prisma/dev.db
 prisma/dev.db-journal
+dev.db
+dev.db-journal
+*.db
+*.db-journal
+
+# sessions and logs
+.sessions/
+*.log
 
 # vercel
 .vercel
@@ -28,3 +36,4 @@ prisma/dev.db-journal
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+

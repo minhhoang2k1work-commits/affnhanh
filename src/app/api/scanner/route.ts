@@ -78,6 +78,19 @@ export async function POST(req: NextRequest) {
       data: itemsToCreate,
     });
 
+    // Create ExtensionJob for Chrome Extension to automatically open tab & scan
+    for (const val of bulkValidation.validItems) {
+      await db.extensionJob.create({
+        data: {
+          userId: user.id,
+          type: 'SCAN_SHOP',
+          targetUrl: val.normalizedUrl,
+          scanJobId: scanJob.id,
+          status: 'queued',
+        },
+      });
+    }
+
     // Launch Background Queue Runner (Async without blocking response)
     startScanJobQueue(scanJob.id);
 

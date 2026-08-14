@@ -14,7 +14,7 @@
     "https://affiliate.shopee.vn/*",
     "http://localhost/*",
     "http://127.0.0.1/*",
-    "https://affnhanh.vercel.app/*"
+    "https://*.vercel.app/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -24,7 +24,10 @@
       "matches": [
         "https://shopee.vn/*",
         "https://*.shopee.vn/*",
-        "https://affiliate.shopee.vn/*"
+        "https://affiliate.shopee.vn/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "https://*.vercel.app/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

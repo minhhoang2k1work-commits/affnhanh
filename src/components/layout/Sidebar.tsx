@@ -18,7 +18,11 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
-  X
+  X,
+  Clapperboard,
+  Workflow,
+  Film,
+  Coins
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -28,6 +32,13 @@ const navItems = [
     href: '/',
     icon: LayoutDashboard,
     badge: 'Live',
+  },
+  {
+    name: 'Tra Cứu Hoa Hồng',
+    href: '/quick-lookup',
+    icon: Coins,
+    badge: 'Live HH',
+    highlight: true,
   },
   {
     name: 'Quét Shop (Scanner)',
@@ -82,6 +93,34 @@ const navItems = [
     href: '/settings/shopee',
     icon: Settings,
     badge: 'Status',
+  },
+];
+
+const aiStudioItems = [
+  {
+    name: 'AI Video Studio',
+    href: '/ai-video',
+    icon: Clapperboard,
+    badge: 'AI',
+    highlight: true,
+  },
+  {
+    name: 'Thư Viện Video',
+    href: '/ai-video/library',
+    icon: Film,
+  },
+  {
+    name: 'Flow Manager',
+    href: '/flows',
+    icon: Workflow,
+    badge: 'Auto',
+  },
+  {
+    name: 'Cài Đặt AI',
+    href: '/ai-settings',
+    icon: Settings,
+    badge: 'Free',
+    highlight: true,
   },
 ];
 
@@ -215,6 +254,51 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             </Link>
           );
         })}
+
+        {/* AI Studio Section */}
+        <div className="pt-4 mt-2 border-t border-slate-800/60">
+          <div className="px-3 mb-2 text-[11px] font-semibold tracking-wider text-amber-400/80 uppercase flex items-center gap-1.5">
+            <Sparkles className="w-3 h-3" />
+            AI Studio
+          </div>
+          {aiStudioItems.map((item) => {
+            const isActive = pathname === item.href;
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onClose}
+                className={cn(
+                  'flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group relative',
+                  isActive
+                    ? 'bg-gradient-to-r from-amber-600/80 to-orange-600/70 text-white shadow-lg shadow-orange-900/30 font-semibold'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <Icon className={cn('w-4 h-4 transition-transform group-hover:scale-110', isActive ? 'text-white' : 'text-slate-400 group-hover:text-amber-400')} />
+                  <span>{item.name}</span>
+                </div>
+                {item.badge && (
+                  <span
+                    className={cn(
+                      'text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider',
+                      isActive
+                        ? 'bg-white/20 text-white'
+                        : item.highlight
+                        ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm'
+                        : 'bg-slate-800 text-slate-400'
+                    )}
+                  >
+                    {item.badge}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </div>
       </nav>
 
       {/* Bottom Footer - Real Dynamic Health Status Badges */}

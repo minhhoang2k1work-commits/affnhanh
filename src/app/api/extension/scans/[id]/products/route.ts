@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { ensureExtensionScanJob } from '@/lib/scanner/queue';
 import { sanitizePrice } from '@/lib/utils';
+import { enrichProductsBatch } from '@/lib/services/commissionEnricher';
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const scanJobId = params.id;
+    const { id: scanJobId } = await params;
     const body = await req.json();
     const { shop, products } = body;
 
@@ -63,6 +64,7 @@ export async function POST(
     let savedCount = 0;
     let createdCount = 0;
     let updatedCount = 0;
+    const affectedProductIds: string[] = [];
 
     if (Array.isArray(products) && products.length > 0 && dbShop) {
       for (const prod of products) {
@@ -142,6 +144,7 @@ export async function POST(
                 ...(cpsActual !== undefined && { cpsActual }),
               },
             });
+            affectedProductIds.push(existingProduct.id);
             updatedCount++;
           } else {
             // CREATING new product
@@ -151,7 +154,7 @@ export async function POST(
             let affScore = Math.min(100, Math.max(50, Math.round(commRate * 4 + rating * 8)));
             if (isNaN(affScore)) affScore = 85;
 
-            await db.product.create({
+            const createdProduct = await db.product.create({
               data: {
                 userId,
                 platform,
@@ -182,6 +185,7 @@ export async function POST(
                 ...(cpsActual !== undefined && { cpsActual }),
               },
             });
+            affectedProductIds.push(createdProduct.id);
             createdCount++;
           }
 
@@ -272,6 +276,15 @@ export async function POST(
           lastSyncedAt: new Date(),
         },
       });
+    }
+
+    // 4. Background Enrichment: Automatically fetch detailed commission & price history via Addlivetag in background
+    if (affectedProductIds.length > 0) {
+      setTimeout(() => {
+        enrichProductsBatch(affectedProductIds, { maxConcurrency: 3, forceUpdate: false }).catch((enrichErr) => {
+          console.warn('[Background Commission Enrichment Warning]:', enrichErr?.message);
+        });
+      }, 300);
     }
 
     return NextResponse.json({

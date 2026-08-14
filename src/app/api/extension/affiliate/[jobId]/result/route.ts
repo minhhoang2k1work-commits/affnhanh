@@ -3,10 +3,10 @@ import { db } from '@/lib/db';
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ) {
   try {
-    const extJobId = params.jobId;
+    const { jobId: extJobId } = await params;
     const body = await req.json();
     const { affiliateUrl, productId, error } = body;
 

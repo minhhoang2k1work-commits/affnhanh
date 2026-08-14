@@ -19,7 +19,8 @@ export async function GET(req: NextRequest) {
     const minSold = searchParams.get('minSold');
     const maxSold = searchParams.get('maxSold');
     const filterType = searchParams.get('filterType') || ''; // 'viral', 'top_sold', 'high_comm', 'sale'
-    const sortBy = searchParams.get('sortBy') || 'score'; // 'score', 'commissionRate', 'sold', 'price_asc', 'price_desc', 'newest'
+    const sortBy = searchParams.get('sortBy') || 'score'; // 'score', 'commissionRate', 'sold', 'price_asc', 'price_desc', 'newest', 'category'
+    const targetCustomer = searchParams.get('targetCustomer') || '';
 
     const whereClause: any = {};
 
@@ -38,6 +39,10 @@ export async function GET(req: NextRequest) {
 
     if (category) {
       whereClause.category = category;
+    }
+
+    if (targetCustomer) {
+      whereClause.targetCustomer = targetCustomer;
     }
 
     if (hasAffiliate !== null && hasAffiliate !== undefined && hasAffiliate !== '') {
@@ -97,6 +102,9 @@ export async function GET(req: NextRequest) {
       case 'newest':
         orderBy = { createdAt: 'desc' };
         break;
+      case 'category':
+        orderBy = { category: 'asc' };
+        break;
       default:
         orderBy = { affiliateScore: 'desc' };
         break;
@@ -124,12 +132,35 @@ export async function GET(req: NextRequest) {
     const totalCount = await db.product.count({ where: whereClause });
     const affCount = await db.product.count({ where: { ...whereClause, hasAffiliate: true } });
 
+    // Distinct categories and target customers for filter dropdowns
+    const allProducts = await db.product.findMany({
+      where: { category: { not: null } },
+      select: { category: true },
+      distinct: ['category'],
+    });
+    const distinctCategories = allProducts
+      .map(p => p.category)
+      .filter((c): c is string => c !== null && c.trim() !== '')
+      .sort();
+
+    const allTargetCustomers = await db.product.findMany({
+      where: { targetCustomer: { not: null } },
+      select: { targetCustomer: true },
+      distinct: ['targetCustomer'],
+    });
+    const distinctTargetCustomers = allTargetCustomers
+      .map(p => p.targetCustomer)
+      .filter((c): c is string => c !== null && c.trim() !== '')
+      .sort();
+
     return NextResponse.json({
       success: true,
       totalCount,
       affCount,
       nonAffCount: totalCount - affCount,
       shops,
+      distinctCategories,
+      distinctTargetCustomers,
       products: products.map((p) => {
         const cleanPrice = sanitizePrice(p.price);
         const cleanSalePrice = sanitizePrice(p.salePrice);

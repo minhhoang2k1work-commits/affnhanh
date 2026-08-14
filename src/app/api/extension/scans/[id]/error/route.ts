@@ -4,10 +4,10 @@ import { ensureExtensionScanJob } from '@/lib/scanner/queue';
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const scanJobId = params.id;
+    const { id: scanJobId } = await params;
     const body = await req.json();
     const { errorMessage } = body;
     

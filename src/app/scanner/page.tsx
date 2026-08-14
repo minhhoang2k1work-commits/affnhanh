@@ -25,13 +25,16 @@ import {
   Star,
   CheckSquare,
   Square,
-  X
+  X,
+  Puzzle,
+  Download
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/lib/utils';
-import * as XLSX from 'xlsx';
+import { InstallExtensionModal } from '@/components/extension/InstallExtensionModal';
 
 export default function ScannerPage() {
   const router = useRouter();
+  const [showInstallModal, setShowInstallModal] = useState(false);
 
   // Mode & Inputs
   const [isBulkMode, setIsBulkMode] = useState(false);
@@ -380,6 +383,33 @@ export default function ScannerPage() {
           </Link>
         </div>
       )}
+
+      {/* Beginner-friendly Extension Install Banner */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-purple-950/40 via-slate-900 to-indigo-950/40 border border-purple-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
+        <div className="flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0 border border-purple-500/30">
+            <Puzzle className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="font-bold text-sm text-white flex items-center gap-2">
+              Cài Đặt Tiện Ích Chrome Để Quét Tự Động
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold border border-purple-500/40">30 Giây</span>
+            </h4>
+            <p className="text-slate-400 text-xs mt-0.5">
+              Tải tiện ích miễn phí ➜ Hệ thống sẽ tự động mở Shopee và cào sản phẩm về web 100% tự động.
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowInstallModal(true)}
+          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:brightness-110 text-white font-extrabold text-xs shadow-lg shadow-purple-600/20 transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer active:scale-95"
+        >
+          <Download className="w-4 h-4" />
+          <span>TẢI & CÀI ĐẶT EXTENSION</span>
+        </button>
+      </div>
 
       {/* Form Input Container */}
       {!activeJobId && (
@@ -730,6 +760,12 @@ export default function ScannerPage() {
           )}
         </div>
       )}
+
+      {/* Install Extension Modal */}
+      <InstallExtensionModal
+        isOpen={showInstallModal}
+        onClose={() => setShowInstallModal(false)}
+      />
     </div>
   );
 }

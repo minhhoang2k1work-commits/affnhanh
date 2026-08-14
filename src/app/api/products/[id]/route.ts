@@ -4,10 +4,10 @@ import { sanitizePrice } from '@/lib/utils';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const product = await db.product.findUnique({
       where: { id },
       include: {
@@ -39,16 +39,17 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await req.json();
     const {
       price, salePrice, commissionRate, name,
       maxCommission, affiliateProgram, voucherAffiliate,
       voucherShop, voucherPlatform, commissionCondition,
-      campaignValidity, allowAds, cpsActual
+      campaignValidity, allowAds, cpsActual,
+      category, targetCustomer
     } = body;
 
     const dataToUpdate: any = {};
@@ -79,6 +80,12 @@ export async function PATCH(
     }
     if (cpsActual !== undefined && cpsActual !== null) {
       dataToUpdate.cpsActual = Number(cpsActual);
+    }
+    if (category !== undefined) {
+      dataToUpdate.category = category || null;
+    }
+    if (targetCustomer !== undefined) {
+      dataToUpdate.targetCustomer = targetCustomer || null;
     }
 
     if (dataToUpdate.salePrice || dataToUpdate.commissionRate) {

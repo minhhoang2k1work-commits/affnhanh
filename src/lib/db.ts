@@ -1,10 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = 'postgres://postgres.ugwpcxhowvtxhinizlgz:c9yUKCHv6fWGuEHG@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require&pgbouncer=true';
-}
-if (!process.env.DIRECT_URL) {
-  process.env.DIRECT_URL = 'postgres://postgres.ugwpcxhowvtxhinizlgz:c9yUKCHv6fWGuEHG@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require';
+  throw new Error('DATABASE_URL is required. Configure it in the runtime environment; credentials must never be committed to source code.');
 }
 
 const globalForPrisma = globalThis as unknown as {

@@ -336,13 +336,13 @@ export default function ScannerPage() {
       <div className="text-center space-y-2">
         <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-[11px] sm:text-xs font-semibold">
           <ScanLine className="w-3.5 h-3.5" />
-          <span>Shop Scanner & Instant 1-Click Link Hub</span>
+          <span>Shopee & TikTok Shop Scanner & Instant 1-Click Link Hub</span>
         </div>
         <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight">
           Quét Shop & Xem <span className="gradient-text">Sản Phẩm Instant</span>
         </h1>
         <p className="text-slate-400 text-xs sm:text-sm max-w-xl mx-auto">
-          Dán link shop → Thấy sản phẩm ngay → Thấy hoa hồng ước tính → Bấm LẤY LINK 1-Click → Tự copy clipboard.
+          Dán link shop Shopee / TikTok Shop → Thấy sản phẩm ngay → Thấy hoa hồng ước tính → Bấm LẤY LINK 1-Click → Tự copy clipboard.
         </p>
       </div>
 
@@ -393,10 +393,10 @@ export default function ScannerPage() {
           <div>
             <h4 className="font-bold text-sm text-white flex items-center gap-2">
               Cài Đặt Tiện Ích Chrome Để Quét Tự Động
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold border border-purple-500/40">30 Giây</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold border border-purple-500/40">Shopee & TikTok</span>
             </h4>
             <p className="text-slate-400 text-xs mt-0.5">
-              Tải tiện ích miễn phí ➜ Hệ thống sẽ tự động mở Shopee và cào sản phẩm về web 100% tự động.
+              Tải tiện ích miễn phí ➜ Tự động mở Shopee hoặc TikTok Shop và cào sản phẩm về web 100% tự động.
             </p>
           </div>
         </div>
@@ -418,15 +418,15 @@ export default function ScannerPage() {
             <form onSubmit={handleSubmitScan} className="space-y-4">
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                  <span>DÁN LINK SHOP (Shopee / Shortlink)</span>
-                  <span className="text-purple-400 normal-case font-normal text-xs">Ví dụ: https://shopee.vn/ten-shop</span>
+                  <span>DÁN LINK SHOP (Shopee / TikTok Shop / Shortlink)</span>
+                  <span className="text-purple-400 normal-case font-normal text-xs">Shopee hoặc TikTok Shop</span>
                 </label>
                 <div className="flex flex-col sm:relative space-y-2 sm:space-y-0">
                   <input
                     type="text"
                     value={singleUrl}
                     onChange={(e) => setSingleUrl(e.target.value)}
-                    placeholder="https://shopee.vn/locknlock_official_store hoặc s.shopee.vn/xxxx"
+                    placeholder="https://shopee.vn/ten-shop hoặc https://www.tiktok.com/@shop_name hoặc vt.tiktok.com/..."
                     disabled={submitting}
                     className="w-full bg-slate-950/90 border-2 border-slate-800 rounded-2xl pl-4 pr-4 sm:pr-36 py-3.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all font-mono"
                   />

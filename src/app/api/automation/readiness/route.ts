@@ -14,7 +14,7 @@ export async function GET() {
     const extensionThreshold = new Date(Date.now() - 30_000);
     const [providers, templateCount, productCount, affiliateLinkCount, extension, reportingAccount] = await Promise.all([
       db.aIProvider.findMany({
-        where: { userId: user.id, isActive: true },
+        where: { userId: user.id, isActive: true, type: { in: ['llm', 'video', 'image', 'voiceover'] } },
         select: { name: true, type: true, mode: true, browserSessionValid: true, apiKeyEnc: true },
       }),
       db.flowTemplate.count({ where: { isSystem: true } }),
@@ -30,6 +30,10 @@ export async function GET() {
     const providerReady = (type: string) => providers.some((provider) =>
       provider.type === type && (provider.mode === 'api' ? Boolean(provider.apiKeyEnc) : provider.browserSessionValid),
     );
+    const [driveConfigured, driveAutoUpload] = await Promise.all([
+      isGoogleDriveConfigured(user.id),
+      isGoogleDriveAutoUploadEnabled(user.id),
+    ]);
     const checks = {
       database: true,
       encryption: Boolean(process.env.ENCRYPTION_KEY && process.env.ENCRYPTION_KEY.length >= 32),
@@ -44,7 +48,7 @@ export async function GET() {
       products: productCount > 0,
       affiliateLinks: affiliateLinkCount > 0,
       extension: Boolean(extension),
-      driveStorage: isGoogleDriveConfigured() && isGoogleDriveAutoUploadEnabled(),
+      driveStorage: driveConfigured && driveAutoUpload,
       youtubePublishing: isYouTubeConfigured(),
       conversionReporting: Boolean(reportingAccount),
     };

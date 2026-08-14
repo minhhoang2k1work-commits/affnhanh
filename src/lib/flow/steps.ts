@@ -286,13 +286,13 @@ const assemble: StepHandler = async (input) => {
 };
 
 const upload_drive: StepHandler = async (input) => {
-  if (!isGoogleDriveAutoUploadEnabled()) {
+  const project = await getProject(input.videoProjectId);
+  if (!(await isGoogleDriveAutoUploadEnabled(project.userId))) {
     return { provider: 'google_drive', uploaded: false, reason: 'automatic_upload_disabled' };
   }
-  if (!isGoogleDriveConfigured()) {
+  if (!(await isGoogleDriveConfigured(project.userId))) {
     throw new Error('Google Drive automatic upload is enabled but OAuth credentials are missing.');
   }
-  const project = await getProject(input.videoProjectId);
   return archiveProjectToGoogleDrive(project.id, project.userId);
 };
 

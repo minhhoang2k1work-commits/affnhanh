@@ -82,7 +82,9 @@ async function startShopScanJob(job) {
   }
 
   // Check if tab already exists
-  const tabs = await chrome.tabs.query({ url: '*://shopee.vn/*' });
+  const isTiktok = targetUrl.includes('tiktok.com');
+  const queryPattern = isTiktok ? '*://*.tiktok.com/*' : '*://shopee.vn/*';
+  const tabs = await chrome.tabs.query({ url: queryPattern });
   let matchedTab = tabs.find((t) => t.url && t.url.includes(new URL(targetUrl).pathname));
 
   if (!matchedTab) {
@@ -130,13 +132,10 @@ async function startAffiliateLinkJob(job) {
         console.log('[AFF HUB Ext] Message sent to content script successfully');
         return;
       } catch (err) {
-        console.log(`[AFF HUB Ext] Send message failed (attempt ${i + 1}):`, err.message);
-        if (i < retries - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
+        if (i === retries - 1) throw err;
+        await new Promise((r) => setTimeout(r, 1000));
       }
     }
-    console.log('[AFF HUB Ext] Gave up sending message after retries');
   };
 
   // Wait for tab to be ready if not complete
@@ -165,6 +164,8 @@ async function startAffiliateLinkJob(job) {
 // Handle Messages from Content Script or Popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
+    const { serverUrl } = await getConfig();
+
     if (message.action === 'SYNC_SERVER_URL' && message.serverUrl) {
       await chrome.storage.local.set({ serverUrl: message.serverUrl, userSetServer: true });
       await ensurePaired();
@@ -173,12 +174,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === 'PRODUCTS_BATCH') {
-      const { scanJobId, shop, products } = message;
+      const { scanJobId, shop, products, platform } = message;
       try {
         const res = await fetch(`${serverUrl}/api/extension/scans/${scanJobId}/products`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ shop, products }),
+          body: JSON.stringify({ shop, products, platform: platform || shop?.platform || 'SHOPEE' }),
         });
         const data = await res.json();
         if (!res.ok || data.error) {

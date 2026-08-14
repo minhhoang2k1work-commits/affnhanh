@@ -29,6 +29,7 @@ const flowIcons: Record<string, string> = {
   generate_voice: '🎙️',
   assemble: '🔧',
   notify: '🔔',
+  upload_drive: '☁️',
 };
 
 export default function FlowManagerPage() {
@@ -83,9 +84,9 @@ export default function FlowManagerPage() {
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg">
             <Workflow className="w-5 h-5 text-white" />
           </div>
-          Flow Manager
+          Quy trình tự động hóa
         </h1>
-        <p className="text-slate-400 mt-1 text-sm">Quản lý pipeline tự động hóa tạo video AI</p>
+        <p className="text-slate-400 mt-1 text-sm">Theo dõi toàn bộ quy trình tạo video, lưu Google Drive và lịch sử vận hành</p>
       </motion.div>
 
       {/* Section Toggle */}
@@ -102,7 +103,7 @@ export default function FlowManagerPage() {
             )}
           >
             {section === 'templates' ? <Layers className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
-            {section === 'templates' ? 'Flow Templates' : 'Lịch Sử Chạy'}
+            {section === 'templates' ? 'Mẫu quy trình' : 'Lịch sử vận hành'}
             {section === 'history' && runs.length > 0 && (
               <span className="px-1.5 py-0.5 text-[10px] font-bold bg-white/20 rounded-full">{runs.length}</span>
             )}

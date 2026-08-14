@@ -34,7 +34,7 @@ function safeProvider(provider: any) {
 export async function GET() {
   try {
     const user = await getOrCreateUser();
-    const providers = await db.aIProvider.findMany({ where: { userId: user.id } });
+    const providers = await db.aIProvider.findMany({ where: { userId: user.id, type: { not: 'storage' } } });
     return NextResponse.json({ success: true, providers: providers.map(safeProvider) });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Internal server error' }, { status: 500 });

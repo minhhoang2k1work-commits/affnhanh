@@ -29,7 +29,7 @@ export function normalizeShopUrl(url: string): string {
 
   try {
     const urlObj = new URL(cleaned);
-    // Strip common tracking query parameters (utm_*, spm, aff_*, ref, etc.)
+    // Strip common tracking query parameters (utm_*, spm, aff_*, ref, tiktok params, etc.)
     const paramsToDelete: string[] = [];
     urlObj.searchParams.forEach((_, key) => {
       if (
@@ -37,7 +37,8 @@ export function normalizeShopUrl(url: string): string {
         key.startsWith('spm') ||
         key.startsWith('aff_') ||
         key.startsWith('gclid') ||
-        ['ref', 'source', 'share_target', 'smtt'].includes(key)
+        key.startsWith('tt_') ||
+        ['ref', 'source', 'share_target', 'smtt', 'is_from_webapp', 'sender_device', 'sender_web_id', 'enter_method', 'enter_from'].includes(key)
       ) {
         paramsToDelete.push(key);
       }
@@ -88,13 +89,13 @@ export async function validateShopUrl(rawUrl: string): Promise<NormalizedUrlResu
       platform = 'LAZADA';
     }
 
-    if (platform === 'UNKNOWN') {
+    if (platform === 'UNKNOWN' || platform === 'LAZADA') {
       return {
         rawUrl,
         normalizedUrl,
         platform: 'UNKNOWN',
         isValid: false,
-        errorMessage: 'Nền tảng này chưa được hỗ trợ (chỉ hỗ trợ Shopee).',
+        errorMessage: 'Nền tảng này chưa được hỗ trợ (hỗ trợ Shopee và TikTok Shop).',
       };
     }
 

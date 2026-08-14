@@ -4,10 +4,15 @@
   console.log('[AFF HUB Content Script] Loaded on:', window.location.href);
 
   // Auto-sync serverUrl and handshake when user is on AFF HUB Web App
-  if (!window.location.hostname.includes('shopee.vn')) {
+  const isShopee = window.location.hostname.includes('shopee.vn');
+  const isTikTok = window.location.hostname.includes('tiktok.com');
+  const isMarketplace = isShopee || isTikTok;
+
+  // Auto-sync serverUrl and handshake when user is on AFF HUB Web App
+  if (!isMarketplace) {
     const currentOrigin = window.location.origin;
     chrome.runtime.sendMessage({ action: 'SYNC_SERVER_URL', serverUrl: currentOrigin });
-    window.postMessage({ type: 'AFF_EXTENSION_INSTALLED', version: '1.0.0', status: 'ready' }, '*');
+    window.postMessage({ type: 'AFF_EXTENSION_INSTALLED', version: '1.1.0', status: 'ready' }, '*');
     document.documentElement.setAttribute('data-aff-extension-installed', 'true');
     console.log('[AFF HUB Extension] Auto-paired with web app origin:', currentOrigin);
     return;
@@ -42,8 +47,9 @@
       padding: 12px; background: #1e293b; border-bottom: 1px solid #334155;
       font-weight: bold; display: flex; justify-content: space-between; align-items: center;
     `;
+    const platformLabel = isTikTok ? '🎵 TikTok Shop' : '⚡ Shopee';
     header.innerHTML = `
-      <span style="font-size: 13px;">⚡ AFF HUB - Đang quét</span>
+      <span style="font-size: 13px;">${platformLabel} - Đang quét</span>
       <div style="display: flex; gap: 8px; align-items: center;">
         <span id="aff-hub-count" style="background: #a855f7; color: white; padding: 2px 8px; border-radius: 10px; font-size: 10px;">0 SP</span>
         <button id="aff-hub-push" style="background: #10b981; border: none; color: white; padding: 3px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; font-weight: bold;">ĐẨY DỮ LIỆU</button>
@@ -65,8 +71,9 @@
         chrome.runtime.sendMessage({
           action: 'PRODUCTS_BATCH',
           scanJobId: currentScanJobId || 'ext_' + Date.now(),
-          shop: window.currentShopInfo || { shopId: 'manual', name: 'Manual Scan' },
+          shop: window.currentShopInfo || { shopId: 'manual', name: 'Manual Scan', platform: isTikTok ? 'TIKTOK' : 'SHOPEE' },
           products: window.pendingProducts,
+          platform: isTikTok ? 'TIKTOK' : 'SHOPEE',
         }, (res) => {
           const pushBtn = document.getElementById('aff-hub-push');
           if (res && res.success) {
@@ -153,7 +160,36 @@
   function extractShopInfo() {
     const canonical = document.querySelector('link[rel="canonical"]')?.href || window.location.href;
 
-    // Try finding shop name and avatar in DOM
+    if (isTikTok) {
+      const usernameMatch = window.location.pathname.match(/@([a-zA-Z0-9_\.\-]+)/) ||
+                            window.location.hostname.match(/([a-zA-Z0-9_\.\-]+)\.tiktok\.com/);
+      let shopId = usernameMatch ? usernameMatch[1] : 'tiktok_shop';
+
+      const nameEl =
+        document.querySelector('[data-e2e="user-title"]') ||
+        document.querySelector('[data-e2e="user-subtitle"]') ||
+        document.querySelector('.shop-header-title') ||
+        document.querySelector('h1') ||
+        document.querySelector('.page-product__shop-name');
+
+      const avatarEl =
+        document.querySelector('[data-e2e="user-avatar"] img') ||
+        document.querySelector('.shop-avatar img') ||
+        document.querySelector('img[class*="avatar"]');
+
+      let shopName = nameEl ? nameEl.innerText.trim() : `@${shopId}`;
+      let avatar = avatarEl ? avatarEl.src : '';
+
+      return {
+        shopId,
+        name: shopName,
+        url: canonical,
+        avatar,
+        platform: 'TIKTOK',
+      };
+    }
+
+    // Shopee Shop Detection
     const nameEl =
       document.querySelector('.section-seller-overview__user-name') ||
       document.querySelector('.shopee-seller-portrait__name') ||
@@ -182,33 +218,53 @@
       name: shopName,
       url: canonical,
       avatar,
+      platform: 'SHOPEE',
     };
   }
 
   // Extract Products from visible DOM / page structures
   function extractProductsFromPage(shopInfo) {
     const newProducts = [];
-    // Select all potential product card elements
+    // Select all potential product card elements across Shopee and TikTok
     const cardElements = document.querySelectorAll(
-      '.shopee-search-item-result__item, .shop-search-result-view__item, [data-sqe="item"], .shopee-grid-item, a[href*="-i."]'
+      '.shopee-search-item-result__item, .shop-search-result-view__item, [data-sqe="item"], .shopee-grid-item, a[href*="-i."], [data-e2e="product-card"], a[href*="/view/product/"], div[class*="product-card"], div[class*="ProductCard"], div[class*="showcase-item"], div[class*="goods-item"]'
     );
 
     cardElements.forEach((card, index) => {
       try {
-        const linkEl = card.tagName === 'A' ? card : card.querySelector('a[href*="-i."]');
-        if (!linkEl) return;
-
-        const href = linkEl.getAttribute('href') || '';
-        const fullUrl = href.startsWith('http') ? href : `https://shopee.vn${href}`;
-
-        // Parse productId from URL e.g. /product-name-i.12345.67890
-        const idMatch = href.match(/-i\.(\d+)\.(\d+)/) || href.match(/i\.(\d+)\.(\d+)/);
-        let productId = '';
-        if (idMatch) {
-          productId = idMatch[2];
+        let linkEl = null;
+        if (isTikTok) {
+          linkEl = card.tagName === 'A' ? card : (card.querySelector('a[href*="/view/product/"], a[href*="product_id="], a[href*="/product/"]') || card.querySelector('a'));
         } else {
-          // fallback string hash
-          productId = `p_${href.split('?')[0].split('/').pop()}`;
+          linkEl = card.tagName === 'A' ? card : card.querySelector('a[href*="-i."]');
+        }
+
+        if (!linkEl && !isTikTok) return;
+
+        const href = linkEl ? (linkEl.getAttribute('href') || '') : '';
+        let fullUrl = '';
+        if (href) {
+          fullUrl = href.startsWith('http') ? href : (isTikTok ? `https://www.tiktok.com${href}` : `https://shopee.vn${href}`);
+        } else {
+          fullUrl = window.location.href;
+        }
+
+        // Parse productId from URL or element attribute
+        let productId = '';
+        if (isTikTok) {
+          const ttIdMatch = href.match(/product\/(\d+)/) || href.match(/product_id=(\d+)/) || href.match(/productId=(\d+)/);
+          if (ttIdMatch) {
+            productId = ttIdMatch[1];
+          } else {
+            productId = card.getAttribute('data-product-id') || `tt_${index}_${Date.now()}`;
+          }
+        } else {
+          const idMatch = href.match(/-i\.(\d+)\.(\d+)/) || href.match(/i\.(\d+)\.(\d+)/);
+          if (idMatch) {
+            productId = idMatch[2];
+          } else {
+            productId = `p_${href.split('?')[0].split('/').pop()}`;
+          }
         }
 
         const dedupKey = `${shopInfo.shopId}_${productId}`;
@@ -218,10 +274,12 @@
         // Product Name
         const nameEl =
           card.querySelector('[data-sqe="name"]') ||
+          card.querySelector('[data-e2e="product-title"]') ||
           card.querySelector('.aria-label') ||
           card.querySelector('.line-clamp-2') ||
           card.querySelector('img[alt]') ||
-          linkEl;
+          linkEl ||
+          card;
         const productName = nameEl ? (nameEl.getAttribute('alt') || nameEl.innerText || '').trim() : '';
 
         if (!productName || productName.length < 3) return;

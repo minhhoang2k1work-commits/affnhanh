@@ -8,6 +8,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q') || '';
+    const platform = searchParams.get('platform') || '';
     const shopId = searchParams.get('shopId') || '';
     const category = searchParams.get('category') || '';
     const hasAffiliate = searchParams.get('hasAffiliate');
@@ -23,6 +24,10 @@ export async function GET(req: NextRequest) {
     const targetCustomer = searchParams.get('targetCustomer') || '';
 
     const whereClause: any = {};
+
+    if (platform && platform !== 'all') {
+      whereClause.platform = platform.toUpperCase();
+    }
 
     if (q) {
       whereClause.OR = [

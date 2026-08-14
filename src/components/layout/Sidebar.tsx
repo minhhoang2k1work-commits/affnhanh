@@ -110,7 +110,7 @@ const aiStudioItems = [
     icon: Film,
   },
   {
-    name: 'Flow Manager',
+    name: 'Quy trình tự động hóa',
     href: '/flows',
     icon: Workflow,
     badge: 'Auto',

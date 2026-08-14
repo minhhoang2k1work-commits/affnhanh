@@ -24,15 +24,21 @@ export async function POST(
     }
 
     const userId = scanJob.userId;
-    const platform = 'SHOPEE';
+    let platform = (body.platform || shop?.platform || '').toUpperCase();
+    if (!platform || (platform !== 'SHOPEE' && platform !== 'TIKTOK')) {
+      const urlToCheck = shop?.url || (products?.[0]?.productUrl) || (products?.[0]?.link) || '';
+      platform = urlToCheck.includes('tiktok') ? 'TIKTOK' : 'SHOPEE';
+    }
 
     // 1. Upsert Shop Record
     let dbShop = null;
     if (shop) {
       const extShopId = String(shop.shopId || `shop_${Date.now()}`);
-      const shopName = shop.name || `Shopee Store ${extShopId}`;
+      const defaultName = platform === 'TIKTOK' ? `TikTok Shop @${extShopId}` : `Shopee Store ${extShopId}`;
+      const defaultUrl = platform === 'TIKTOK' ? `https://www.tiktok.com/@${extShopId}` : `https://shopee.vn/shop/${extShopId}`;
+      const shopName = shop.name || defaultName;
       const logo = shop.avatar || shop.logo || null;
-      const shopUrl = shop.url || `https://shopee.vn/shop/${extShopId}`;
+      const shopUrl = shop.url || defaultUrl;
 
       dbShop = await db.shop.upsert({
         where: {
@@ -84,7 +90,10 @@ export async function POST(
           let rating = Number(prod.rating) || 5.0;
           if (isNaN(rating)) rating = 5.0;
 
-          const originalUrl = prod.productUrl || prod.link || `https://shopee.vn/product/${dbShop.externalShopId}/${extProductId}`;
+          const defaultProdUrl = platform === 'TIKTOK' 
+            ? `https://www.tiktok.com/view/product/${extProductId}`
+            : `https://shopee.vn/product/${dbShop.externalShopId}/${extProductId}`;
+          const originalUrl = prod.productUrl || prod.link || defaultProdUrl;
           
           let commRate = (prod.commissionRate !== undefined && prod.commissionRate !== null && !isNaN(Number(prod.commissionRate))) ? Number(prod.commissionRate) : 0;
           if (isNaN(commRate)) commRate = 0;

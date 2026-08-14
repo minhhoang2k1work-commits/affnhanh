@@ -23,6 +23,7 @@ export async function archiveProjectToGoogleDrive(projectId: string, userId: str
     filePath,
     name: safeFileName(project.title),
     projectId: project.id,
+    userId,
   });
   const note = JSON.stringify({ aiProjectId: project.id, driveFileId: file.id });
   const existingRecord = await db.video.findFirst({

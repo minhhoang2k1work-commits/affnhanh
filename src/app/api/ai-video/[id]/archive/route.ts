@@ -5,13 +5,13 @@ import { isGoogleDriveConfigured } from '@/lib/storage/google-drive';
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!isGoogleDriveConfigured()) {
+    const user = await getOrCreateUser();
+    if (!(await isGoogleDriveConfigured(user.id))) {
       return NextResponse.json({
         error: 'Google Drive chưa được cấu hình. Hãy thêm Client ID, Client Secret và Refresh Token.',
       }, { status: 400 });
     }
     const { id } = await params;
-    const user = await getOrCreateUser();
     const storage = await archiveProjectToGoogleDrive(id, user.id);
     return NextResponse.json({ success: true, storage });
   } catch (error) {

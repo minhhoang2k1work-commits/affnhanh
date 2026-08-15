@@ -239,10 +239,148 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         connected: Boolean(deviceToken),
         activeScanJob,
       });
+    } else if (message.action === 'VIDEO_BROWSER_START') {
+      // Don't block - run async orchestration
+      sendResponse({ started: true });
+      runVideoBrowserPipeline(message.payload);
     }
   })();
   return true; // Keep async channel open
 });
+
+// --- VIDEO BROWSER PIPELINE ORCHESTRATOR ---
+async function runVideoBrowserPipeline({ imageData, chatgptUrl, flowUrl }) {
+  const updateState = async (updates) => {
+    const current = (await chrome.storage.local.get('videoPipelineState')).videoPipelineState || {};
+    await chrome.storage.local.set({ videoPipelineState: { ...current, ...updates } });
+  };
+
+  try {
+    // Reset state
+    await updateState({
+      analyzeStatus: 'active', promptStatus: 'pending',
+      video1Status: 'pending', video2Status: 'pending', mergeStatus: 'pending',
+      progress: 5, statusText: 'Đang mở ChatGPT...',
+      finalVideoUrl: null, error: null
+    });
+
+    // === STEP 1: Open ChatGPT and analyze image ===
+    const chatgptTab = await chrome.tabs.create({ url: chatgptUrl, active: false });
+    await waitForTabComplete(chatgptTab.id);
+    await sleep(3000); // Wait for ChatGPT to fully load
+
+    await updateState({ progress: 10, statusText: 'Đang gửi ảnh lên ChatGPT...' });
+
+    const analysisPrompt = `Hãy phân tích ảnh sản phẩm này và tạo 2 prompt video:
+- Prompt 1: Video quảng cáo kiểu marketing, close-up chi tiết sản phẩm, nền studio chuyên nghiệp
+- Prompt 2: Video lifestyle, sản phẩm đang được sử dụng, góc quay cinematic, ánh sáng tự nhiên
+
+Trả lời theo format:
+[PROMPT1]
+(nội dung prompt 1 bằng tiếng Anh)
+[/PROMPT1]
+[PROMPT2]
+(nội dung prompt 2 bằng tiếng Anh)
+[/PROMPT2]`;
+
+    // Send message to ChatGPT content script
+    const chatgptResult = await chrome.tabs.sendMessage(chatgptTab.id, {
+      action: 'CHATGPT_ANALYZE',
+      imageData,
+      prompt: analysisPrompt
+    });
+
+    if (!chatgptResult.success) throw new Error('ChatGPT analysis failed: ' + chatgptResult.error);
+    
+    await updateState({ analyzeStatus: 'done', promptStatus: 'active', progress: 25, statusText: 'Đang tách prompt...' });
+    
+    // Close ChatGPT tab
+    chrome.tabs.remove(chatgptTab.id);
+
+    // === STEP 2: Parse prompts from response ===
+    const prompt1Match = chatgptResult.responseText.match(/\[PROMPT1\]([\s\S]*?)\[\/PROMPT1\]/i);
+    const prompt2Match = chatgptResult.responseText.match(/\[PROMPT2\]([\s\S]*?)\[\/PROMPT2\]/i);
+    
+    const prompt1 = prompt1Match ? prompt1Match[1].trim() : 'Professional product showcase video with clean background';
+    const prompt2 = prompt2Match ? prompt2Match[1].trim() : 'Lifestyle video of product being used naturally';
+
+    await updateState({ promptStatus: 'done', progress: 30, statusText: 'Đã tách 2 prompt' });
+
+    // === STEP 3: Generate video 1 on Google Flow ===
+    await updateState({ video1Status: 'active', progress: 35, statusText: 'Đang tạo video 1 trên Google Flow...' });
+    
+    const flowTab1 = await chrome.tabs.create({ url: flowUrl, active: false });
+    await waitForTabComplete(flowTab1.id);
+    await sleep(4000); // Google Flow can be slow to fully initialize
+
+    const video1Result = await chrome.tabs.sendMessage(flowTab1.id, {
+      action: 'FLOW_GENERATE',
+      imageData,
+      prompt: prompt1
+    });
+
+    if (!video1Result.success) throw new Error('Google Flow video 1 failed: ' + video1Result.error);
+    
+    await updateState({ video1Status: 'done', progress: 55, statusText: 'Video 1 hoàn thành!' });
+    chrome.tabs.remove(flowTab1.id);
+
+    // === STEP 4: Generate video 2 on Google Flow ===
+    await updateState({ video2Status: 'active', progress: 60, statusText: 'Đang tạo video 2 trên Google Flow...' });
+
+    const flowTab2 = await chrome.tabs.create({ url: flowUrl, active: false });
+    await waitForTabComplete(flowTab2.id);
+    await sleep(4000);
+
+    const video2Result = await chrome.tabs.sendMessage(flowTab2.id, {
+      action: 'FLOW_GENERATE',
+      imageData,
+      prompt: prompt2
+    });
+
+    if (!video2Result.success) throw new Error('Google Flow video 2 failed: ' + video2Result.error);
+    
+    await updateState({ video2Status: 'done', progress: 80, statusText: 'Video 2 hoàn thành!' });
+    chrome.tabs.remove(flowTab2.id);
+
+    // === STEP 5: Merge videos via backend ===
+    await updateState({ mergeStatus: 'active', progress: 85, statusText: 'Đang ghép 2 video...' });
+
+    const serverUrl = (await chrome.storage.local.get('serverUrl')).serverUrl || 'http://localhost:3000';
+    const mergeRes = await fetch(`${serverUrl}/api/video/merge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoUrls: [video1Result.videoUrl, video2Result.videoUrl] })
+    });
+    const mergeData = await mergeRes.json();
+
+    if (!mergeData.success) throw new Error('Video merge failed: ' + mergeData.error);
+
+    await updateState({
+      mergeStatus: 'done', progress: 100,
+      statusText: '✅ Video hoàn thành!',
+      finalVideoUrl: `${serverUrl}${mergeData.videoUrl}`
+    });
+
+  } catch (error) {
+    console.error('[AFF HUB] Pipeline error:', error);
+    await updateState({ error: error.message, statusText: '❌ Lỗi: ' + error.message });
+  }
+}
+
+// Helper: Wait for tab to finish loading
+function waitForTabComplete(tabId) {
+  return new Promise((resolve) => {
+    const listener = (id, info) => {
+      if (id === tabId && info.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // Alarm Timers
 sendHeartbeat();

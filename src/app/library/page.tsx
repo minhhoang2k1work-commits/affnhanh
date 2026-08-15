@@ -41,7 +41,9 @@ import {
   Users,
   Layers,
   Coins,
-  Globe
+  Globe,
+  Video,
+  Loader2
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import { CATEGORY_OPTIONS, TARGET_CUSTOMER_OPTIONS } from '@/lib/constants';
@@ -92,6 +94,75 @@ function LibraryContent() {
   const [isAddToColOpen, setIsAddToColOpen] = useState(false);
   const [colTargetProductIds, setColTargetProductIds] = useState<string[]>([]);
   const [colTargetProductNames, setColTargetProductNames] = useState<string[]>([]);
+
+  // Video Pipeline State
+  const [videoCreating, setVideoCreating] = useState(false);
+  const [videoProductName, setVideoProductName] = useState('');
+  const [videoPipelineState, setVideoPipelineState] = useState<any>(null);
+  const [extensionInstalled, setExtensionInstalled] = useState(false);
+
+  // Check extension installed & listen for video pipeline state
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      if (event.data?.type === 'AFF_EXTENSION_INSTALLED') {
+        setExtensionInstalled(true);
+      }
+      if (event.data?.type === 'AFF_VIDEO_STARTED') {
+        if (!event.data.started) {
+          showToast('Lỗi khởi tạo video: ' + (event.data.error || 'Extension không phản hồi'));
+          setVideoCreating(false);
+        }
+      }
+      if (event.data?.type === 'AFF_VIDEO_STATE') {
+        const state = event.data.state;
+        setVideoPipelineState(state);
+        if (state?.finalVideoUrl) {
+          showToast('🎬 Video hoàn thành!');
+        }
+        if (state?.error) {
+          showToast('❌ Lỗi: ' + state.error);
+        }
+        if (state?.finalVideoUrl || state?.error) {
+          setTimeout(() => setVideoCreating(false), 3000);
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    if (document.documentElement.getAttribute('data-aff-extension-installed') === 'true') {
+      setExtensionInstalled(true);
+    }
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const handleCreateVideo = async (product: any) => {
+    if (!extensionInstalled) {
+      showToast('Cần cài đặt AFF HUB Extension để tạo video!');
+      return;
+    }
+    let chatgptUrl = localStorage.getItem('aff_chatgpt_url') || '';
+    const flowUrl = localStorage.getItem('aff_flow_url') || 'https://flow.google';
+
+    if (!chatgptUrl) {
+      const url = prompt('Nhập link ChatGPT trợ lý phân tích sản phẩm:', 'https://chatgpt.com/g/g-xxxxx');
+      if (!url) return;
+      localStorage.setItem('aff_chatgpt_url', url);
+      chatgptUrl = url;
+    }
+
+    setVideoCreating(true);
+    setVideoProductName(product.name);
+    setVideoPipelineState(null);
+
+    window.postMessage({
+      type: 'AFF_CREATE_VIDEO',
+      imageUrl: product.image,
+      chatgptUrl,
+      flowUrl,
+      productId: product.id,
+      productName: product.name,
+    }, '*');
+  };
 
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [newCommRate, setNewCommRate] = useState<string>('');
@@ -1106,7 +1177,7 @@ function LibraryContent() {
                     </button>
                   )}
 
-                  <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                  <div className="grid grid-cols-4 gap-1.5 text-[11px]">
                     <a
                       href={p.originalUrl}
                       target="_blank"
@@ -1122,6 +1193,14 @@ function LibraryContent() {
                     >
                       <Copy className="w-3 h-3" />
                       <span>Link Gốc</span>
+                    </button>
+                    <button
+                      onClick={() => handleCreateVideo(p)}
+                      className="p-1.5 rounded-lg bg-slate-900 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-600 hover:text-white flex items-center justify-center gap-1 transition-all"
+                      title="Tạo Video AI từ sản phẩm"
+                    >
+                      <Video className="w-3 h-3" />
+                      <span>Video</span>
                     </button>
                     <button
                       onClick={() => {
@@ -1431,6 +1510,92 @@ function LibraryContent() {
           showToast(`Đã thêm vào bộ sưu tập "${collectionName}"!`);
         }}
       />
+
+      {/* Video Pipeline Progress Modal */}
+      {videoCreating && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4">
+          <div className="bg-slate-950 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center gap-2 text-white font-bold text-sm">
+              <Video className="w-5 h-5 text-cyan-400" />
+              <span>🎬 Đang Tạo Video AI</span>
+            </div>
+            <div className="text-xs text-slate-400 truncate">{videoProductName}</div>
+            
+            {/* Step Indicators */}
+            <div className="space-y-2 text-xs">
+              {[
+                { key: 'analyzeStatus', label: 'Phân tích ảnh trên ChatGPT' },
+                { key: 'promptStatus', label: 'Tách prompt video' },
+                { key: 'video1Status', label: 'Tạo video 1 trên Google Flow' },
+                { key: 'video2Status', label: 'Tạo video 2 trên Google Flow' },
+                { key: 'mergeStatus', label: 'Ghép video' },
+              ].map(({ key, label }) => {
+                const status = videoPipelineState?.[key] || 'pending';
+                return (
+                  <div key={key} className={`flex items-center gap-2 ${
+                    status === 'active' ? 'text-cyan-300' :
+                    status === 'done' ? 'text-emerald-400' :
+                    status === 'error' ? 'text-red-400' : 'text-slate-500'
+                  }`}>
+                    {status === 'active' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    {status === 'done' && <Check className="w-3.5 h-3.5" />}
+                    {status === 'error' && <X className="w-3.5 h-3.5" />}
+                    {status === 'pending' && <Clock className="w-3.5 h-3.5" />}
+                    <span>{label}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Progress Bar */}
+            <div className="w-full bg-slate-800 rounded-full h-2">
+              <div 
+                className="bg-gradient-to-r from-cyan-500 to-emerald-500 h-2 rounded-full transition-all duration-500"
+                style={{ width: `${videoPipelineState?.progress || 0}%` }}
+              />
+            </div>
+            <div className="text-[11px] text-slate-400">
+              {videoPipelineState?.statusText || 'Đang khởi tạo...'}
+            </div>
+
+            {/* Result */}
+            {videoPipelineState?.finalVideoUrl && (
+              <div className="space-y-2">
+                <video 
+                  src={videoPipelineState.finalVideoUrl} 
+                  controls 
+                  className="w-full rounded-xl border border-slate-700"
+                />
+                <div className="flex gap-2">
+                  <a
+                    href={videoPipelineState.finalVideoUrl}
+                    download
+                    className="flex-1 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold text-center hover:bg-emerald-500 transition-all"
+                  >
+                    ⬇️ Tải Video
+                  </a>
+                  <button
+                    onClick={() => { setVideoCreating(false); setVideoPipelineState(null); }}
+                    className="flex-1 py-2 rounded-xl bg-slate-800 text-white text-xs font-bold text-center hover:bg-slate-700 transition-all"
+                  >
+                    ✕ Đóng
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Error close button */}
+            {videoPipelineState?.error && (
+              <button
+                onClick={() => { setVideoCreating(false); setVideoPipelineState(null); }}
+                className="w-full py-2 rounded-xl bg-red-900/50 border border-red-500/30 text-red-300 text-xs font-bold hover:bg-red-800/50 transition-all"
+              >
+                ✕ Đóng
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

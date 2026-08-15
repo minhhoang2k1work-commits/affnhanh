@@ -15,6 +15,53 @@
     window.postMessage({ type: 'AFF_EXTENSION_INSTALLED', version: '1.1.0', status: 'ready' }, '*');
     document.documentElement.setAttribute('data-aff-extension-installed', 'true');
     console.log('[AFF HUB Extension] Auto-paired with web app origin:', currentOrigin);
+
+    // Listen for video creation requests from the web app
+    window.addEventListener('message', (event) => {
+      if (event.source !== window) return;
+
+      // Web app requests video creation for a product
+      if (event.data?.type === 'AFF_CREATE_VIDEO') {
+        console.log('[AFF HUB Extension] Video creation request:', event.data);
+        chrome.runtime.sendMessage({
+          action: 'VIDEO_BROWSER_START',
+          payload: {
+            imageData: event.data.imageUrl,
+            chatgptUrl: event.data.chatgptUrl,
+            flowUrl: event.data.flowUrl,
+            productId: event.data.productId,
+            productName: event.data.productName,
+          }
+        }, (res) => {
+          window.postMessage({
+            type: 'AFF_VIDEO_STARTED',
+            started: res?.started || false,
+            error: res?.error || null,
+          }, '*');
+        });
+      }
+
+      // Web app checks current pipeline state
+      if (event.data?.type === 'AFF_VIDEO_STATUS') {
+        chrome.storage.local.get('videoPipelineState', (result) => {
+          window.postMessage({
+            type: 'AFF_VIDEO_STATE',
+            state: result.videoPipelineState || null,
+          }, '*');
+        });
+      }
+    });
+
+    // Forward pipeline state changes back to web app in real-time
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.videoPipelineState) {
+        window.postMessage({
+          type: 'AFF_VIDEO_STATE',
+          state: changes.videoPipelineState.newValue,
+        }, '*');
+      }
+    });
+
     return;
   }
 

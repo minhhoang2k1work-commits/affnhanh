@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { 
   Settings, 
@@ -13,7 +14,9 @@ import {
   Loader2, 
   ExternalLink, 
   RefreshCw,
-  Monitor
+  Monitor,
+  Workflow,
+  Clapperboard,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -27,41 +30,67 @@ interface ProviderState {
   isSaving: boolean;
   isTesting: boolean;
   isLaunchingBrowser: boolean;
+  apiConnected: boolean;
 }
 
 const INITIAL_PROVIDERS = {
-  chatgpt: { mode: 'browser' as ProviderMode, browserStatus: 'disconnected' as ConnectionStatus, apiKey: '', isSaving: false, isTesting: false, isLaunchingBrowser: false },
-  kling: { mode: 'browser' as ProviderMode, browserStatus: 'disconnected' as ConnectionStatus, apiKey: '', isSaving: false, isTesting: false, isLaunchingBrowser: false },
-  runway: { mode: 'browser' as ProviderMode, browserStatus: 'disconnected' as ConnectionStatus, apiKey: '', isSaving: false, isTesting: false, isLaunchingBrowser: false },
-  google_aistudio: { mode: 'browser' as ProviderMode, browserStatus: 'disconnected' as ConnectionStatus, apiKey: '', isSaving: false, isTesting: false, isLaunchingBrowser: false },
-  elevenlabs: { mode: 'api' as ProviderMode, browserStatus: 'disconnected' as ConnectionStatus, apiKey: '', isSaving: false, isTesting: false, isLaunchingBrowser: false },
-  openai: { mode: 'api' as ProviderMode, browserStatus: 'disconnected' as ConnectionStatus, apiKey: '', isSaving: false, isTesting: false, isLaunchingBrowser: false },
+  chatgpt: { mode: 'browser' as ProviderMode, browserStatus: 'disconnected' as ConnectionStatus, apiKey: '', isSaving: false, isTesting: false, isLaunchingBrowser: false, apiConnected: false },
+  kling: { mode: 'browser' as ProviderMode, browserStatus: 'disconnected' as ConnectionStatus, apiKey: '', isSaving: false, isTesting: false, isLaunchingBrowser: false, apiConnected: false },
+  runway: { mode: 'browser' as ProviderMode, browserStatus: 'disconnected' as ConnectionStatus, apiKey: '', isSaving: false, isTesting: false, isLaunchingBrowser: false, apiConnected: false },
+  google_aistudio: { mode: 'browser' as ProviderMode, browserStatus: 'disconnected' as ConnectionStatus, apiKey: '', isSaving: false, isTesting: false, isLaunchingBrowser: false, apiConnected: false },
+  elevenlabs: { mode: 'api' as ProviderMode, browserStatus: 'disconnected' as ConnectionStatus, apiKey: '', isSaving: false, isTesting: false, isLaunchingBrowser: false, apiConnected: false },
+  openai: { mode: 'api' as ProviderMode, browserStatus: 'disconnected' as ConnectionStatus, apiKey: '', isSaving: false, isTesting: false, isLaunchingBrowser: false, apiConnected: false },
+};
+
+const PROVIDER_TYPES: Record<keyof typeof INITIAL_PROVIDERS, 'llm' | 'video' | 'voiceover'> = {
+  chatgpt: 'llm',
+  openai: 'llm',
+  kling: 'video',
+  runway: 'video',
+  google_aistudio: 'video',
+  elevenlabs: 'voiceover',
 };
 
 export default function AISettingsPage() {
   const [providers, setProviders] = useState(INITIAL_PROVIDERS);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
-  const [globalLoading, setGlobalLoading] = useState(true);
+  const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const fetchStatuses = async () => {
     try {
-      const res = await fetch('/api/ai-browser/status');
-      const data = await res.json();
+      const [browserResponse, apiResponse] = await Promise.all([
+        fetch('/api/ai-browser/status'),
+        fetch('/api/ai-providers'),
+      ]);
+      const data = await browserResponse.json();
+      const apiData = await apiResponse.json();
       if (data.success && data.statuses) {
         setProviders(prev => {
           const next = { ...prev };
           Object.keys(data.statuses).forEach(key => {
             if (next[key as keyof typeof INITIAL_PROVIDERS]) {
-              next[key as keyof typeof INITIAL_PROVIDERS].browserStatus = data.statuses[key];
+              const rawStatus = data.statuses[key]?.status;
+              next[key as keyof typeof INITIAL_PROVIDERS].browserStatus = rawStatus === 'connected'
+                ? 'connected'
+                : rawStatus === 'expired' ? 'expired' : 'disconnected';
             }
           });
+          for (const provider of apiData.providers || []) {
+            const id = provider.name as keyof typeof INITIAL_PROVIDERS;
+            if (next[id]) {
+              next[id] = {
+                ...next[id],
+                mode: provider.mode === 'api' ? 'api' : 'browser',
+                apiConnected: Boolean(provider.hasApiKey),
+                browserStatus: provider.browserSessionValid ? 'connected' : next[id].browserStatus,
+              };
+            }
+          }
           return next;
         });
       }
     } catch (err) {
       console.error(err);
-    } finally {
-      setGlobalLoading(false);
     }
   };
 
@@ -75,6 +104,7 @@ export default function AISettingsPage() {
 
   const handleLaunchBrowser = async (id: keyof typeof INITIAL_PROVIDERS) => {
     updateProvider(id, { isLaunchingBrowser: true });
+    setNotice(null);
     try {
       const res = await fetch('/api/ai-browser/login', {
         method: 'POST',
@@ -84,9 +114,12 @@ export default function AISettingsPage() {
       const data = await res.json();
       if (data.success) {
         fetchStatuses();
+        setNotice({ type: 'success', text: data.message || `Đã lưu phiên đăng nhập ${id}.` });
+      } else {
+        throw new Error(data.error || data.message || 'Không thể mở Browser đăng nhập.');
       }
     } catch (err) {
-      console.error('Launch error', err);
+      setNotice({ type: 'error', text: err instanceof Error ? err.message : 'Không thể mở Browser đăng nhập.' });
     } finally {
       updateProvider(id, { isLaunchingBrowser: false });
     }
@@ -94,32 +127,39 @@ export default function AISettingsPage() {
 
   const handleSaveApi = async (id: keyof typeof INITIAL_PROVIDERS) => {
     updateProvider(id, { isSaving: true });
+    setNotice(null);
     try {
-      await fetch('/api/ai-providers', {
+      const response = await fetch('/api/ai-providers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ service: id, apiKey: providers[id].apiKey }),
+        body: JSON.stringify({ name: id, type: PROVIDER_TYPES[id], mode: 'api', apiKey: providers[id].apiKey }),
       });
-      // Simulate success
-      setTimeout(() => updateProvider(id, { isSaving: false }), 500);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Không thể lưu API key.');
+      updateProvider(id, { apiConnected: true, apiKey: '' });
+      setNotice({ type: 'success', text: `Đã lưu ${id} API key an toàn.` });
     } catch (err) {
-      console.error('Save error', err);
+      setNotice({ type: 'error', text: err instanceof Error ? err.message : 'Không thể lưu API key.' });
+    } finally {
       updateProvider(id, { isSaving: false });
     }
   };
 
   const handleTestApi = async (id: keyof typeof INITIAL_PROVIDERS) => {
     updateProvider(id, { isTesting: true });
+    setNotice(null);
     try {
-      await fetch('/api/ai-providers/test', {
+      const response = await fetch('/api/ai-providers/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ service: id }),
+        body: JSON.stringify({ name: id, apiKey: providers[id].apiKey }),
       });
-      // Simulate test complete
-      setTimeout(() => updateProvider(id, { isTesting: false }), 800);
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || data.error || 'Kiểm tra kết nối thất bại.');
+      setNotice({ type: 'success', text: `${id}: ${data.message}` });
     } catch (err) {
-      console.error('Test error', err);
+      setNotice({ type: 'error', text: err instanceof Error ? err.message : 'Kiểm tra kết nối thất bại.' });
+    } finally {
       updateProvider(id, { isTesting: false });
     }
   };
@@ -138,7 +178,7 @@ export default function AISettingsPage() {
       } else {
         updateProvider(id, { browserStatus: 'disconnected' });
       }
-    } catch (err) {
+    } catch {
       updateProvider(id, { browserStatus: 'disconnected' });
     }
   };
@@ -215,7 +255,8 @@ export default function AISettingsPage() {
     <div className="max-w-5xl mx-auto space-y-8 pb-12 p-4 md:p-8">
       {/* Header */}
       <div className="flex flex-col gap-4 border-b border-slate-800 pb-6">
-        <div>
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+          <div>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs font-semibold mb-3">
             <Settings className="w-3.5 h-3.5" />
             <Sparkles className="w-3.5 h-3.5" />
@@ -227,8 +268,28 @@ export default function AISettingsPage() {
           <p className="text-sm text-slate-400 mt-2">
             Quản lý kết nối với các dịch vụ AI — chọn dùng miễn phí qua Browser hoặc API Key
           </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/ai-video" className="px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20 text-sm font-semibold flex items-center gap-2">
+              <Clapperboard className="w-4 h-4" /> AI Video Studio
+            </Link>
+            <Link href="/flows" className="px-3 py-2 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-300 hover:bg-purple-500/20 text-sm font-semibold flex items-center gap-2">
+              <Workflow className="w-4 h-4" /> Quy trình tự động hóa
+            </Link>
+          </div>
         </div>
       </div>
+
+      {notice && (
+        <div className={cn(
+          'rounded-xl border px-4 py-3 text-sm',
+          notice.type === 'success'
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+            : 'bg-rose-500/10 border-rose-500/30 text-rose-300',
+        )}>
+          {notice.text}
+        </div>
+      )}
 
       {/* Banner */}
       <motion.div 
@@ -241,8 +302,8 @@ export default function AISettingsPage() {
             <ZapIcon />
           </div>
           <div>
-            <h4 className="font-bold text-emerald-300">Tiết kiệm chi phí với Browser Mode</h4>
-            <p className="text-sm text-emerald-400/80">Tiết kiệm ~$1.31/video khi dùng Browser Mode thay API</p>
+            <h4 className="font-bold text-emerald-300">Chọn chế độ phù hợp nơi triển khai</h4>
+            <p className="text-sm text-emerald-400/80">Browser Mode dành cho máy local có giao diện và ổ đĩa bền vững; khi deploy cloud nên dùng API Mode.</p>
           </div>
         </div>
       </motion.div>
@@ -345,6 +406,12 @@ export default function AISettingsPage() {
                     </div>
                   ) : (
                     <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-400">API connection</span>
+                        {state.apiConnected
+                          ? <span className="text-xs font-bold text-emerald-400">Connected ✅</span>
+                          : <span className="text-xs font-bold text-rose-400">Not Connected</span>}
+                      </div>
                       <div className="space-y-2">
                         <label className="text-xs font-medium text-slate-400">API Key</label>
                         <div className="relative">
@@ -352,7 +419,7 @@ export default function AISettingsPage() {
                             type={showKeys[config.id] ? "text" : "password"}
                             value={state.apiKey}
                             onChange={(e) => updateProvider(config.id, { apiKey: e.target.value })}
-                            placeholder={`Nhập ${config.name} API Key...`}
+                            placeholder={state.apiConnected ? 'Đã lưu an toàn — nhập key mới để thay đổi' : `Nhập ${config.name} API Key...`}
                             className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2.5 pl-3 pr-10 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
                           />
                           <button

@@ -110,6 +110,102 @@
       font-size: 10px;
       color: #64748b;
     }
+    .tabs {
+      display: flex;
+      margin-bottom: 12px;
+      border-bottom: 1px solid #1e293b;
+    }
+    .tab {
+      flex: 1;
+      text-align: center;
+      padding: 8px 0;
+      font-size: 12px;
+      font-weight: 700;
+      color: #64748b;
+      cursor: pointer;
+      position: relative;
+      transition: color 0.2s;
+    }
+    .tab.active {
+      color: #f8fafc;
+    }
+    .tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: #a855f7;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    input[type="text"], select {
+      width: 100%;
+      padding: 8px;
+      border-radius: 6px;
+      background: #0f172a;
+      color: #f8fafc;
+      border: 1px solid #334155;
+      font-size: 11px;
+      margin-top: 4px;
+    }
+    .upload-area {
+      border: 1px dashed #334155;
+      border-radius: 6px;
+      padding: 16px;
+      text-align: center;
+      margin-top: 8px;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .upload-area:hover {
+      border-color: #a855f7;
+      color: #a855f7;
+    }
+    #imagePreview {
+      margin-top: 8px;
+      text-align: center;
+    }
+    #previewImg {
+      max-width: 100%;
+      max-height: 150px;
+      border-radius: 6px;
+      object-fit: contain;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: #0f172a;
+      border-radius: 3px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #a855f7, #ec4899);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+    .progress-step {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .progress-step.active {
+      color: #f8fafc;
+    }
+    .progress-step.done {
+      color: #10b981;
+    }
   </style>
 </head>
 <body>
@@ -121,27 +217,97 @@
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-title">Trang hiện tại</div>
-    <div id="currentPage" class="card-value">Đang kiểm tra...</div>
+  <div class="tabs">
+    <div class="tab active" data-tab="tab-scan">⚡ Quét Shop</div>
+    <div class="tab" data-tab="tab-video">🎬 Video AI</div>
   </div>
 
-  <div class="card">
-    <div class="card-title">Thiết bị & Nhịp tim</div>
-    <div id="deviceToken" class="card-value">Device ID: Pairing...</div>
+  <div id="tab-scan" class="tab-content active">
+    <div class="card">
+      <div class="card-title">Trang hiện tại</div>
+      <div id="currentPage" class="card-value">Đang kiểm tra...</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Thiết bị & Nhịp tim</div>
+      <div id="deviceToken" class="card-value">Device ID: Pairing...</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Server Đích</div>
+      <select id="serverSelect" style="width: 100%; padding: 6px; border-radius: 6px; background: #0f172a; color: #f8fafc; border: 1px solid #334155; font-size: 11px; font-weight: bold; cursor: pointer;">
+        <option value="http://localhost:3000">💻 Localhost (http://localhost:3000)</option>
+        <option value="https://affnhanh.vercel.app">🌐 Vercel Prod (https://affnhanh.vercel.app)</option>
+      </select>
+    </div>
+
+    <button id="scanBtn" class="btn btn-primary">
+      ⚡ QUÉT SHOP NÀY VỀ AFF HUB
+    </button>
   </div>
 
-  <div class="card">
-    <div class="card-title">Server Đích</div>
-    <select id="serverSelect" style="width: 100%; padding: 6px; border-radius: 6px; background: #0f172a; color: #f8fafc; border: 1px solid #334155; font-size: 11px; font-weight: bold; cursor: pointer;">
-      <option value="http://localhost:3000">💻 Localhost (http://localhost:3000)</option>
-      <option value="https://affnhanh.vercel.app">🌐 Vercel Prod (https://affnhanh.vercel.app)</option>
-    </select>
-  </div>
+  <div id="tab-video" class="tab-content">
+    <!-- ẢNH SẢN PHẨM - keep existing image input + upload area + preview -->
+    <div class="card">
+      <div class="card-title">ẢNH SẢN PHẨM</div>
+      <input id="videoImageUrl" type="text" placeholder="Paste URL ảnh sản phẩm..." />
+      <div class="upload-area" id="uploadArea">
+        <span>📷 Hoặc kéo thả ảnh vào đây</span>
+      </div>
+      <div id="imagePreview" style="display:none;">
+        <img id="previewImg" />
+      </div>
+    </div>
 
-  <button id="scanBtn" class="btn btn-primary">
-    ⚡ QUÉT SHOP NÀY VỀ AFF HUB
-  </button>
+    <!-- LINK TRỢ LÝ CHATGPT (NEW) -->
+    <div class="card">
+      <div class="card-title">🤖 LINK TRỢ LÝ CHATGPT</div>
+      <input id="chatgptUrl" type="text" placeholder="https://chatgpt.com/g/g-xxxxx" />
+      <div style="font-size: 10px; color: #64748b; margin-top: 4px;">Paste link GPT trợ lý phân tích sản phẩm</div>
+    </div>
+
+    <!-- LINK GOOGLE FLOW (thay Kling) -->
+    <div class="card">
+      <div class="card-title">🎬 LINK GOOGLE FLOW</div>
+      <input id="flowUrl" type="text" placeholder="https://flow.google" value="https://flow.google" />
+      <div style="font-size: 10px; color: #64748b; margin-top: 4px;">Link trang Google Flow tạo video AI</div>
+    </div>
+
+    <!-- Generate Button -->
+    <button id="generateVideoBtn" class="btn btn-primary">
+      🚀 TẠO VIDEO AI
+    </button>
+
+    <!-- Progress Section - UPDATE with more detailed steps -->
+    <div id="videoProgress" style="display:none;">
+      <div class="card">
+        <div class="card-title">TIẾN TRÌNH</div>
+        <div id="progressSteps">
+          <div class="progress-step" id="step-analyze">⏳ Bước 1: Phân tích ảnh trên ChatGPT</div>
+          <div class="progress-step" id="step-prompt">⏳ Bước 2: Tách prompt video</div>
+          <div class="progress-step" id="step-video1">⏳ Bước 3: Tạo video 1 trên Google Flow</div>
+          <div class="progress-step" id="step-video2">⏳ Bước 4: Tạo video 2 trên Google Flow</div>
+          <div class="progress-step" id="step-merge">⏳ Bước 5: Ghép video</div>
+        </div>
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+        <div id="progressText" style="font-size: 11px; color: #94a3b8; margin-top: 6px;">Đang khởi tạo...</div>
+      </div>
+    </div>
+
+    <!-- Result Section - keep as-is -->
+    <div id="videoResult" style="display:none;">
+      <div class="card">
+        <div class="card-title">KẾT QUẢ</div>
+        <video id="resultVideo" controls style="width:100%; border-radius: 8px;"></video>
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+          <button id="downloadVideoBtn" class="btn" style="flex:1; background: #10b981; color: white;">⬇️ Tải Video</button>
+          <button id="newVideoBtn" class="btn" style="flex:1; background: #1e293b; color: #f8fafc; border: 1px solid #334155;">🔄 Tạo Mới</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="footer">
     AFF HUB Chrome Extension Bridge v1.0.0

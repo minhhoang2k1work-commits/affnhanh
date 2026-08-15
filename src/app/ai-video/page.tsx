@@ -25,6 +25,7 @@ import { StoryboardTimeline } from '@/components/ai-video/StoryboardTimeline';
 import { FlowRunTracker } from '@/components/ai-video/FlowRunTracker';
 import { VideoPlayer } from '@/components/ai-video/VideoPlayer';
 import { GoogleDrivePanel } from '@/components/ai-video/GoogleDrivePanel';
+import { resolveSelectedFlowTemplateId } from '@/lib/flow/template-selection';
 
 type WizardStep = 'form' | 'script' | 'storyboard' | 'generating' | 'complete';
 type Tab = 'create' | 'processing' | 'library';
@@ -38,6 +39,23 @@ export default function AIVideoStudioPage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [processingProjects, setProcessingProjects] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [selectedTemplateName, setSelectedTemplateName] = useState<string | null>(null);
+
+  // Preserve the flow selected from /flows and make that choice visible here.
+  useEffect(() => {
+    const templateId = resolveSelectedFlowTemplateId(window.location.search);
+    if (!templateId) return;
+
+    setSelectedTemplateId(templateId);
+    fetch('/api/flows')
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        const template = payload?.templates?.find((item: any) => item.id === templateId);
+        setSelectedTemplateName(template?.name || 'Mẫu quy trình đã chọn');
+      })
+      .catch(() => setSelectedTemplateName('Mẫu quy trình đã chọn'));
+  }, []);
 
   // Fetch projects
   const fetchProjects = useCallback(async () => {
@@ -92,7 +110,8 @@ export default function AIVideoStudioPage() {
       const payload = await res.json();
       const project = payload.project;
       if (!project?.id) throw new Error('API không trả về project hợp lệ');
-      setCurrentProject(project);
+      const templateId = resolveSelectedFlowTemplateId(window.location.search, selectedTemplateId);
+      setCurrentProject({ ...project, templateId: templateId || undefined });
 
       // Auto-generate script
       const scriptRes = await fetch(`/api/ai-video/${project.id}/script`, {
@@ -154,7 +173,7 @@ export default function AIVideoStudioPage() {
       const res = await fetch(`/api/ai-video/${currentProject.id}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ templateId: currentProject.templateId }),
+        body: JSON.stringify({ templateId: selectedTemplateId || currentProject.templateId }),
       });
       if (res.ok) {
         setWizardStep('generating');
@@ -207,6 +226,13 @@ export default function AIVideoStudioPage() {
       </motion.div>
 
       <GoogleDrivePanel />
+
+      {selectedTemplateId && (
+        <div className="px-4 py-3 rounded-xl bg-purple-500/10 border border-purple-500/25 text-sm text-purple-200 flex items-center gap-2">
+          <Workflow className="w-4 h-4 shrink-0" />
+          <span>Quy trình đã chọn: <strong>{selectedTemplateName || 'Đang tải...'}</strong></span>
+        </div>
+      )}
 
       {/* Tab Navigation */}
       <div className="flex gap-1 p-1 bg-slate-900/60 rounded-xl border border-slate-800">

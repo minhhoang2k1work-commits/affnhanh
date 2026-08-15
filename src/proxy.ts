@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const username = process.env.APP_BASIC_AUTH_USER;
   const password = process.env.APP_BASIC_AUTH_PASSWORD;
   if (!username || !password) return NextResponse.next();
@@ -24,4 +24,3 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico|generated/).*)'],
 };
-

@@ -19,7 +19,14 @@
     "https://affiliate.tiktok.com/*",
     "http://localhost/*",
     "http://127.0.0.1/*",
-    "https://*.vercel.app/*"
+    "https://*.vercel.app/*",
+    "https://api.openai.com/*",
+    "https://chatgpt.com/*",
+    "https://*.chatgpt.com/*",
+    "https://flow.google/*",
+    "https://*.flow.google/*",
+    "https://labs.google/*",
+    "https://*.labs.google/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -40,6 +47,16 @@
         "https://*.vercel.app/*"
       ],
       "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://chatgpt.com/*", "https://*.chatgpt.com/*"],
+      "js": ["chatgpt-content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://flow.google/*", "https://*.flow.google/*", "https://labs.google/*", "https://*.labs.google/*"],
+      "js": ["flow-content.js"],
       "run_at": "document_idle"
     }
   ],

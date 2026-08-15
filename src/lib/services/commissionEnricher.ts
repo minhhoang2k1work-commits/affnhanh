@@ -71,12 +71,21 @@ export async function enrichProductsBatch(
           if (lookup.success && lookup.data) {
             const d = lookup.data;
             const comm = d.commission;
+            if (!comm.hasData) {
+              results.push({
+                productId: p.id,
+                externalProductId: p.externalProductId,
+                success: false,
+                error: 'Nguồn chưa công bố dữ liệu hoa hồng.',
+              });
+              return;
+            }
             const salePrice = p.salePrice || d.price || 0;
 
             const totalCommRate = comm.totalRate || 0;
             const baseCommRate = comm.shopeeRate || 0;
             const extraCommRate = comm.sellerRate || 0;
-            const maxComm = comm.capAmount || undefined;
+            const maxComm = comm.capKnown ? comm.capAmount : undefined;
             const estComm = comm.totalAmount || Math.round((salePrice * totalCommRate) / 100);
 
             const rating = p.rating || d.rating || 5.0;
@@ -91,7 +100,7 @@ export async function enrichProductsBatch(
                 commissionRate: totalCommRate > 0 ? totalCommRate : p.commissionRate,
                 maxCommission: maxComm,
                 estCommission: estComm,
-                commissionSource: 'addlivetag',
+                commissionSource: `addlivetag_${comm.source}`,
                 commissionUpdatedAt: new Date(),
                 affiliateScore: affScore,
               },

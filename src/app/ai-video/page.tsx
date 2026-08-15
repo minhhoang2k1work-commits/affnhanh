@@ -22,6 +22,7 @@ import { cn, formatCurrency } from '@/lib/utils';
 import { VideoStudioForm, ProjectFormData } from '@/components/ai-video/VideoStudioForm';
 import { ScriptEditor } from '@/components/ai-video/ScriptEditor';
 import { StoryboardTimeline } from '@/components/ai-video/StoryboardTimeline';
+import { CreativeBlueprintPanel } from '@/components/ai-video/CreativeBlueprintPanel';
 import { FlowRunTracker } from '@/components/ai-video/FlowRunTracker';
 import { VideoPlayer } from '@/components/ai-video/VideoPlayer';
 import { GoogleDrivePanel } from '@/components/ai-video/GoogleDrivePanel';
@@ -155,7 +156,7 @@ export default function AIVideoStudioPage() {
       const res = await fetch(`/api/ai-video/${currentProject.id}/storyboard`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
-        setCurrentProject((prev: any) => ({ ...prev, scenes: data.scenes, storyboard: data.scenes }));
+        setCurrentProject((prev: any) => ({ ...prev, scenes: data.scenes, storyboard: data.storyboard }));
         setWizardStep('storyboard');
       }
     } catch (err) {
@@ -319,6 +320,7 @@ export default function AIVideoStudioPage() {
                   scenes={currentProject.scenes}
                   onSceneClick={() => {}}
                 />
+                <CreativeBlueprintPanel storyboard={currentProject.storyboard} />
                 <div className="flex justify-end gap-3">
                   <button
                     onClick={() => setWizardStep('script')}

@@ -57,6 +57,10 @@ interface LookupData {
     capStatus: string;
     note?: string;
     isUnlocked: boolean;
+    hasData: boolean;
+    source: 'official_api' | 'details' | 'metadata' | 'unavailable';
+    capKnown: boolean;
+    status: 'available' | 'not_affiliate' | 'unknown';
   };
   priceHistory: {
     currentPrice: string;
@@ -171,8 +175,8 @@ export default function QuickLookupPage() {
 
   const sampleProducts = [
     { label: 'Áo Len Nam Nữ', id: '1589295236' },
-    { label: 'Son Dưỡng Dior', id: '23562309118' },
-    { label: 'Tai Nghe Bluetooth', id: '22145678901' },
+    { label: 'Ảnh Bác & Hoa Sen', id: '28912442339' },
+    { label: 'Hàng Rào Gỗ', id: '27012422067' },
   ];
 
   return (
@@ -358,7 +362,7 @@ export default function QuickLookupPage() {
                       {result.commission.totalRate > 0 ? `${result.commission.totalRate}%` : 'Chưa rõ'}
                     </span>
                     <span className="text-xs font-bold text-slate-400">
-                      ≈ {result.commission.totalAmountFormatted} / đơn
+                      {result.commission.hasData ? `≈ ${result.commission.totalAmountFormatted} / đơn` : 'Không có dữ liệu xác thực'}
                     </span>
                   </div>
                 </div>
@@ -411,6 +415,31 @@ export default function QuickLookupPage() {
               Chi Tiết Phân Tách Hoa Hồng (Commission Breakdown)
             </h3>
 
+            {result.commission.source === 'metadata' && (
+              <div className="mb-3 p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/25 text-xs text-cyan-200 flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 shrink-0" />
+                Đã khai thác hoa hồng từ metadata công khai của trang nguồn; không cần đăng nhập để lấy Tổng, Shopee và Seller.
+              </div>
+            )}
+            {result.commission.source === 'official_api' && (
+              <div className="mb-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-xs text-emerald-200 flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 shrink-0" />
+                Hoa hồng đã được đối chiếu trực tiếp từ Shopee Affiliate Open API.
+              </div>
+            )}
+            {result.commission.status === 'not_affiliate' && (
+              <div className="mb-3 p-3 rounded-xl bg-slate-500/10 border border-slate-500/25 text-xs text-slate-300 flex items-center gap-2">
+                <Info className="w-4 h-4 shrink-0" />
+                Shopee xác nhận sản phẩm này hiện không có hoa hồng Affiliate.
+              </div>
+            )}
+            {result.commission.source === 'unavailable' && (
+              <div className="mb-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs text-amber-200 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                Nguồn chưa cung cấp dữ liệu hoa hồng. Các ô bên dưới hiển thị “Chưa rõ”, không còn coi 0% là dữ liệu thật.
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Card 1: Total */}
               <div className="p-4 rounded-xl bg-gradient-to-br from-amber-500/10 via-slate-900 to-slate-900 border border-amber-500/30 space-y-1">
@@ -418,10 +447,10 @@ export default function QuickLookupPage() {
                   🌟 Tổng Hoa Hồng
                 </span>
                 <div className="text-xl font-black text-white">
-                  {result.commission.totalRate}%
+                  {result.commission.hasData ? `${result.commission.totalRate}%` : 'Chưa rõ'}
                 </div>
                 <div className="text-xs text-amber-300/90 font-semibold">
-                  ≈ {result.commission.totalAmountFormatted}
+                  {result.commission.hasData ? `≈ ${result.commission.totalAmountFormatted}` : '—'}
                 </div>
                 <p className="text-[11px] text-slate-400 pt-1">Tổng cộng Shopee + Shop chi trả</p>
               </div>
@@ -432,10 +461,10 @@ export default function QuickLookupPage() {
                   🏪 Hoa Hồng Shop (Seller)
                 </span>
                 <div className="text-xl font-black text-white">
-                  {result.commission.sellerRate}%
+                  {result.commission.hasData ? `${result.commission.sellerRate}%` : 'Chưa rõ'}
                 </div>
                 <div className="text-xs text-emerald-300/90 font-semibold">
-                  ≈ {result.commission.sellerAmountFormatted}
+                  {result.commission.hasData ? `≈ ${result.commission.sellerAmountFormatted}` : '—'}
                 </div>
                 <p className="text-[11px] text-slate-400 pt-1">Shop tự nguyện trả thêm cho KOL</p>
               </div>
@@ -446,10 +475,10 @@ export default function QuickLookupPage() {
                   🛍️ Hoa Hồng Sàn (Shopee)
                 </span>
                 <div className="text-xl font-black text-white">
-                  {result.commission.shopeeRate}%
+                  {result.commission.hasData ? `${result.commission.shopeeRate}%` : 'Chưa rõ'}
                 </div>
                 <div className="text-xs text-cyan-300/90 font-semibold">
-                  ≈ {result.commission.shopeeAmountFormatted}
+                  {result.commission.hasData ? `≈ ${result.commission.shopeeAmountFormatted}` : '—'}
                 </div>
                 <p className="text-[11px] text-slate-400 pt-1">Mức hoa hồng tiêu chuẩn của ngành</p>
               </div>
@@ -460,10 +489,10 @@ export default function QuickLookupPage() {
                   🛡️ Mức Trần (Cap Tối Đa)
                 </span>
                 <div className="text-xl font-black text-white">
-                  {result.commission.capAmountFormatted}
+                  {result.commission.capKnown ? result.commission.capAmountFormatted : 'Chưa rõ'}
                 </div>
                 <div className="text-xs text-pink-300/90 font-semibold">
-                  Trạng thái: {result.commission.capStatus}
+                  Trạng thái: {result.commission.capKnown ? result.commission.capStatus : 'Chưa công bố'}
                 </div>
                 <p className="text-[11px] text-slate-400 pt-1">Mức hoa hồng tối đa nhận trên 1 SP</p>
               </div>

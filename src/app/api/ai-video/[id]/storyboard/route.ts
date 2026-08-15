@@ -12,7 +12,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     await db.aIVideoProject.update({ where: { id: project.id }, data: { status: 'storyboarding', errorMessage: null } });
     await stepHandlers.llm_storyboard({ videoProjectId: project.id, script: project.script, stepConfig: {} });
     const scenes = await db.aIVideoScene.findMany({ where: { projectId: project.id }, orderBy: { sceneNumber: 'asc' } });
-    return NextResponse.json({ success: true, scenes });
+    const updatedProject = await db.aIVideoProject.findUnique({ where: { id: project.id }, select: { storyboard: true } });
+    return NextResponse.json({ success: true, scenes, storyboard: updatedProject?.storyboard });
   } catch (error: any) {
     console.error('Error generating storyboard:', error);
     return NextResponse.json({ error: error?.message || 'Internal server error' }, { status: 500 });

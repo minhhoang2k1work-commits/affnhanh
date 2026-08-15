@@ -143,16 +143,43 @@ ${JSON.stringify(params.script, null, 2)}
 Your output MUST be entirely in valid JSON format. The JSON should match this structure:
 
 {
+  "styleBible": {
+    "visualStyle": "Locked art direction used in every scene",
+    "palette": "Locked colors",
+    "lighting": "Locked lighting",
+    "aspectRatio": "9:16",
+    "continuityRules": "Immutable face, hair, age, wardrobe, props and screen direction",
+    "negativePrompt": "Identity drift, extra limbs, text artifacts, flicker and morphing to avoid"
+  },
+  "characters": [
+    {
+      "id": "Stable short identifier",
+      "name": "Character name",
+      "role": "Story role",
+      "appearance": "Exact immutable face, body, age and hair description",
+      "wardrobe": "Exact immutable wardrobe",
+      "signatureDetails": "Distinctive props and traits",
+      "referencePrompt": "Reusable identity-lock prompt copied into every relevant scene"
+    }
+  ],
   "scenes": [
     {
       "sceneNumber": "Number - Sequential scene number",
       "visualPrompt": "String - Detailed prompt for an AI video/image generator describing the visual",
+      "imagePrompt": "One clean 9:16 production keyframe with locked identities",
+      "videoPrompt": "Motion, camera, expression, physics and timing starting from the keyframe",
+      "negativePrompt": "Scene-specific things to avoid",
       "narration": "String - Corresponding voiceover or text",
       "cameraAngle": "String - E.g., Close up, Wide shot, Panning",
       "duration": "Number - Duration in seconds",
-      "transition": "String - E.g., Cut, Fade in, Swipe"
+      "transition": "String - E.g., Cut, Fade in, Swipe",
+      "characterIds": ["IDs from characters above"],
+      "setting": "Exact location and time",
+      "continuityNotes": "What must match previous and next scenes"
     }
   ]
 }
+
+Create the styleBible and characters first. Repeat the exact identity details in every relevant imagePrompt. Keep face, age, hair, wardrobe, props, palette, lighting and spatial direction stable across all scenes.
 `.trim();
 }

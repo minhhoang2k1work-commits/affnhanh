@@ -5,6 +5,7 @@ import * as veoClient from './veo-client';
 import * as klingClient from './kling-client';
 import * as runwayClient from './runway-client';
 import * as voiceoverClient from './voiceover-client';
+import * as imageClient from './image-client';
 
 export type ProviderType = 'llm' | 'video' | 'image' | 'voiceover';
 export type ProviderMode = 'api' | 'browser';
@@ -136,6 +137,24 @@ export class AIProviderManager {
       generateScript: (params: Omit<openaiClient.GenerateScriptParams, 'apiKey'>) => openaiClient.generateScript({ ...params, apiKey: config.apiKey! }),
       generateStoryboard: (params: Omit<openaiClient.GenerateStoryboardParams, 'apiKey'>) => openaiClient.generateStoryboard({ ...params, apiKey: config.apiKey! }),
       enhancePrompt: (rawPrompt: string, targetModel: string) => openaiClient.enhancePrompt(rawPrompt, targetModel, config.apiKey!),
+    };
+  }
+
+  public async getImageClient() {
+    let config: ProviderConfig;
+    try {
+      config = await this.getProviderConfig('image', 'openai');
+    } catch {
+      // Reuse the OpenAI LLM credential so users do not have to save the same key twice.
+      config = await this.getProviderConfig('llm', 'openai');
+    }
+    if (config.mode !== 'api' || !config.apiKey) {
+      throw new Error('OpenAI image generation requires an API key.');
+    }
+    return {
+      generateReferenceImage: (params: Omit<imageClient.GenerateReferenceImageParams, 'apiKey'>) =>
+        imageClient.generateReferenceImage({ ...params, apiKey: config.apiKey! }),
+      providerName: 'openai_image',
     };
   }
 

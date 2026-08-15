@@ -7,13 +7,16 @@ import { motion } from 'framer-motion';
 
 export interface Scene {
   id: string;
-  visual: string;
-  narration: string;
+  visual?: string;
+  visualPrompt?: string;
+  narration?: string;
   duration: number;
-  camera: string;
-  transition: string;
+  camera?: string;
+  cameraAngle?: string;
+  transition?: string;
   status?: 'pending' | 'generating' | 'completed' | 'failed';
   thumbnailUrl?: string;
+  referenceImageUrl?: string;
 }
 
 interface StoryboardTimelineProps {
@@ -38,6 +41,7 @@ export function StoryboardTimeline({ scenes, activeScene, onSceneClick }: Storyb
       <div className="flex gap-4 overflow-x-auto pb-4 snap-x hide-scrollbar">
         {scenes.map((scene, index) => {
           const isActive = index === activeScene;
+          const thumbnail = scene.thumbnailUrl || scene.referenceImageUrl;
           
           return (
             <div 
@@ -59,19 +63,19 @@ export function StoryboardTimeline({ scenes, activeScene, onSceneClick }: Storyb
               </div>
               
               <div className="space-y-3">
-                {scene.thumbnailUrl ? (
+                {thumbnail ? (
                    <div className="aspect-video rounded-lg overflow-hidden bg-slate-900">
-                      <img src={scene.thumbnailUrl} alt="scene" className="w-full h-full object-cover" />
+                      <img src={thumbnail} alt="scene" className="w-full h-full object-cover" />
                    </div>
                 ) : (
                   <div className="p-3 rounded-xl bg-slate-900/50 text-xs text-slate-300 line-clamp-3 min-h-[60px] italic">
-                    "{scene.visual}"
+                    "{scene.visual || scene.visualPrompt}"
                   </div>
                 )}
                 
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                    {scene.camera}
+                    {scene.camera || scene.cameraAngle}
                   </span>
                   <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
                     {scene.transition}

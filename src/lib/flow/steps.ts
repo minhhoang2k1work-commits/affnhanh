@@ -81,6 +81,7 @@ const llm_storyboard: StepHandler = async (input) => {
   const config = input.stepConfig || {};
   const provider = await providerManager.getProviderWithFallback('llm');
   let scenes: any[];
+  let storyboard: any;
 
   if (provider.mode === 'browser') {
     const session = await aiSessionManager.getAuthenticatedPage(provider.userId, 'chatgpt');
@@ -88,7 +89,7 @@ const llm_storyboard: StepHandler = async (input) => {
     try {
       const { sendPrompt, extractJSON, buildStoryboardPrompt } = await import('@/lib/ai-browser/chatgpt-driver');
       const prompt = buildStoryboardPrompt({ script, duration: Number(config.duration || project.duration), style: project.style });
-      const storyboard = extractJSON((await sendPrompt(session.page, prompt)).response);
+      storyboard = extractJSON((await sendPrompt(session.page, prompt)).response);
       scenes = storyboard?.scenes || [];
     } finally {
       await session.context.close().catch(() => {});
@@ -96,7 +97,7 @@ const llm_storyboard: StepHandler = async (input) => {
     }
   } else {
     const { generateStoryboard } = await import('@/lib/ai/openai-client');
-    const storyboard = await generateStoryboard({
+    storyboard = await generateStoryboard({
       script: script as any,
       duration: Number(config.duration || project.duration),
       style: project.style,
@@ -121,25 +122,89 @@ const llm_storyboard: StepHandler = async (input) => {
         transition: scene.transition || 'fade',
       },
     })),
-    db.aIVideoProject.update({ where: { id: project.id }, data: { storyboard: scenes as any } }),
+    db.aIVideoProject.update({ where: { id: project.id }, data: { storyboard: (storyboard || { scenes }) as any } }),
   ]);
 
-  return { scenes, storyboard: scenes };
+  return { scenes, storyboard: storyboard || { scenes } };
 };
+
+function asRecord(value: unknown): Record<string, any> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
+}
+
+function buildReferencePrompt(project: any, scene: any, sceneSpec: Record<string, any>, storyboard: Record<string, any>): string {
+  const styleBible = asRecord(storyboard.styleBible);
+  const characters = Array.isArray(storyboard.characters) ? storyboard.characters : [];
+  const characterIds = Array.isArray(sceneSpec.characterIds) ? sceneSpec.characterIds : [];
+  const activeCharacters = characters.filter((character: any) => characterIds.includes(character.id));
+  const characterLock = activeCharacters.length
+    ? activeCharacters.map((character: any) => [
+        `${character.name} (${character.id})`, character.appearance, character.wardrobe,
+        character.signatureDetails, character.referencePrompt,
+      ].filter(Boolean).join('; ')).join('\n')
+    : characters.map((character: any) => character.referencePrompt).filter(Boolean).join('\n');
+
+  return [
+    'Create one production keyframe for a vertical 9:16 cinematic video. No collage and no character sheet.',
+    `Project style: ${project.style}.`,
+    styleBible.visualStyle && `Locked visual style: ${styleBible.visualStyle}.`,
+    styleBible.palette && `Locked palette: ${styleBible.palette}.`,
+    styleBible.lighting && `Locked lighting: ${styleBible.lighting}.`,
+    characterLock && `LOCKED CHARACTER IDENTITIES (copy these details exactly):\n${characterLock}`,
+    sceneSpec.setting && `Setting: ${sceneSpec.setting}.`,
+    `Scene: ${sceneSpec.imagePrompt || sceneSpec.visualPrompt || scene.visualPrompt}.`,
+    sceneSpec.continuityNotes && `Continuity from adjacent scenes: ${sceneSpec.continuityNotes}.`,
+    `Camera: ${scene.cameraAngle || sceneSpec.cameraAngle || 'cinematic medium shot'}.`,
+    `Avoid: ${sceneSpec.negativePrompt || styleBible.negativePrompt || 'identity drift, extra limbs, text, logos, watermarks, split screens'}.`,
+  ].filter(Boolean).join('\n');
+}
 
 const generate_image: StepHandler = async (input) => {
   const project = await getProject(input.videoProjectId);
   const scenes = await getScenes(project.id);
+  if (scenes.length === 0) throw new Error('Storyboard scenes are required before reference image generation.');
   const productImages = Array.isArray(project.productImages) ? (project.productImages as string[]) : [];
+  const rawStoryboard = project.storyboard as unknown;
+  const storyboard = Array.isArray(rawStoryboard) ? { scenes: rawStoryboard } : asRecord(rawStoryboard);
+  const sceneSpecs = Array.isArray(storyboard.scenes) ? storyboard.scenes : [];
+  const outputDir = await ensureGeneratedProjectDir(project.id);
+  let imageClient: Awaited<ReturnType<typeof providerManager.getImageClient>> | null = null;
+  let imageProvider = 'product_reference';
+
+  try {
+    imageClient = await providerManager.getImageClient();
+    imageProvider = imageClient.providerName;
+  } catch (error) {
+    if (productImages.length === 0) {
+      throw new Error(`Không thể tạo ảnh khóa cho cảnh. Hãy cấu hình OpenAI API hoặc tải ảnh tham chiếu sản phẩm lên. ${error instanceof Error ? error.message : ''}`.trim());
+    }
+  }
 
   for (const [index, scene] of scenes.entries()) {
-    const referenceImageUrl = scene.referenceImageUrl || productImages[index % Math.max(1, productImages.length)] || null;
+    await db.aIVideoScene.update({
+      where: { id: scene.id },
+      data: { status: 'generating_image', errorMessage: null },
+    });
+    let referenceImageUrl = scene.referenceImageUrl || null;
+    if (!referenceImageUrl && imageClient) {
+      const sceneSpec = asRecord(sceneSpecs[index] || {});
+      const generated = await imageClient.generateReferenceImage({
+        prompt: buildReferencePrompt(project, scene, sceneSpec, storyboard),
+        aspectRatio: input.stepConfig?.aspectRatio || '9:16',
+      });
+      const imagePath = path.join(outputDir, `scene-${scene.sceneNumber}-reference.png`);
+      await materializeAsset(generated, imagePath);
+      referenceImageUrl = toPublicAssetUrl(imagePath);
+    }
+    if (!referenceImageUrl && productImages.length > 0) {
+      referenceImageUrl = productImages[index % productImages.length];
+    }
     await db.aIVideoScene.update({
       where: { id: scene.id },
       data: { referenceImageUrl, status: 'pending', errorMessage: null },
     });
   }
-  return { scenes: await getScenes(project.id), imageCount: productImages.length };
+  return { scenes: await getScenes(project.id), imageCount: scenes.length, imageProvider };
 };
 
 async function waitForApiVideo(client: any, taskId: string) {

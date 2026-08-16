@@ -9,6 +9,8 @@ export async function GET() {
   let extensionStatus = 'not_connected';
   let lastExtensionSeen: string | null = null;
 
+  let dbError: string | null = null;
+
   try {
     const user = await getOrCreateUser();
     if (user) {
@@ -36,11 +38,13 @@ export async function GET() {
       }
     }
   } catch (error: any) {
+    dbError = error?.message || String(error);
     console.error('[HealthCheck Full Error]:', error);
   }
 
   return NextResponse.json({
     database: dbStatus,
+    dbError,
     shopeeProductSource: 'ready',
     shopeeAffiliate: shopeeAffiliateStatus,
     extension: extensionStatus,

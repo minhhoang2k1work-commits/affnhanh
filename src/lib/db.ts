@@ -5,9 +5,10 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient(): PrismaClient {
-  if (!process.env.DATABASE_URL) {
+  const dbUrl = process.env.POSTGRES_PRISMA_URL || process.env.DATABASE_URL;
+  if (!dbUrl) {
     throw new Error(
-      'DATABASE_URL is required at runtime. Configure it in the deployment environment; credentials must never be committed to source code.',
+      'POSTGRES_PRISMA_URL or DATABASE_URL is required at runtime. Configure it in the deployment environment.',
     );
   }
   return new PrismaClient({
@@ -31,7 +32,7 @@ export const db = new Proxy({} as PrismaClient, {
 });
 
 export function isDatabaseConfigured(): boolean {
-  return Boolean(process.env.DATABASE_URL);
+  return Boolean(process.env.POSTGRES_PRISMA_URL || process.env.DATABASE_URL);
 }
 
 export async function getOrCreateUser() {

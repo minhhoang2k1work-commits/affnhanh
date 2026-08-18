@@ -12,13 +12,46 @@
   if (!isMarketplace) {
     const currentOrigin = window.location.origin;
     chrome.runtime.sendMessage({ action: 'SYNC_SERVER_URL', serverUrl: currentOrigin });
-    window.postMessage({ type: 'AFF_EXTENSION_INSTALLED', version: '1.8.1', status: 'ready' }, '*');
-    document.documentElement.setAttribute('data-aff-extension-installed', 'true');
-    console.log('[AFF HUB Extension] Auto-paired with web app origin:', currentOrigin);
+
+    function broadcastHandshake() {
+      chrome.storage.local.get(['deviceToken', 'licenseKey'], (stored) => {
+        chrome.runtime.sendMessage({ action: 'CHECK_LICENSE' }, (licenseInfo) => {
+          const payload = {
+            type: 'AFF_EXTENSION_HANDSHAKE',
+            version: '1.8.2',
+            installed: true,
+            ready: Boolean(licenseInfo?.valid),
+            deviceToken: stored?.deviceToken || null,
+            licenseKey: stored?.licenseKey || null,
+            licenseName: licenseInfo?.licenseName || null,
+            expiresAt: licenseInfo?.expiresAt || null,
+            maxDevices: licenseInfo?.maxDevices || 2,
+          };
+          window.postMessage(payload, '*');
+          window.postMessage({ type: 'AFF_EXTENSION_INSTALLED', ...payload }, '*');
+          document.documentElement.setAttribute('data-aff-extension-installed', 'true');
+          if (stored?.deviceToken) {
+            document.documentElement.setAttribute('data-aff-device-token', stored.deviceToken);
+          }
+          console.log('[AFF HUB Extension] Broadcasted handshake to web app:', payload);
+        });
+      });
+    }
+
+    // Immediate and delayed broadcast for fast & reliable pickup
+    broadcastHandshake();
+    setTimeout(broadcastHandshake, 800);
+    setTimeout(broadcastHandshake, 2500);
 
     // Listen for video creation and commission lookup requests from the web app
     window.addEventListener('message', (event) => {
       if (event.source !== window) return;
+
+      // Web app pings extension to check identity and status
+      if (event.data?.type === 'AFF_PING_EXTENSION') {
+        broadcastHandshake();
+        return;
+      }
 
       // Web app requests video creation for a product
       if (event.data?.type === 'AFF_CREATE_VIDEO') {

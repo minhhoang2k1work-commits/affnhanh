@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AFF HUB — Shopee & TikTok Shop Bridge",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "Chrome Extension Bridge kết nối Shopee & TikTok Shop với AFF HUB Web Application.",
   "permissions": [
     "storage",

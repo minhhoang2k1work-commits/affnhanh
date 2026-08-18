@@ -438,8 +438,10 @@ function diagnosticSummary(diagnostics) {
 
 async function trustedElementClick(element) {
   element.scrollIntoView({ block: 'center', inline: 'center' });
-  await sleep(80);
+  await sleep(150);
   const { x, y } = getElementCenter(element);
+
+  // Try trusted click via Chrome Debugger (ONE attempt only — no retry to avoid double-click)
   try {
     const result = await chrome.runtime.sendMessage({ action: 'FLOW_TRUSTED_CLICK', x, y });
     if (result?.ok) return result;
@@ -447,9 +449,14 @@ async function trustedElementClick(element) {
   } catch (error) {
     console.warn('[AFF HUB] Trusted click failed, using DOM fallback:', error.message);
   }
+
+  // DOM fallback (single click)
+  element.focus({ preventScroll: true });
+  await sleep(50);
   interactionClick(element);
   return { ok: true, method: 'dom-click-fallback' };
 }
+
 
 async function setPrompt(promptText, { requireReady = true } = {}) {
   let lastTrustedError = '';
@@ -492,16 +499,14 @@ async function setPrompt(promptText, { requireReady = true } = {}) {
   const composer = getComposerContext();
   if (!composer) throw new Error('Không tìm thấy ô prompt Google Flow.');
   const input = composer.input;
+  const isSlate = input.getAttribute('data-slate-editor') === 'true';
 
-  if (input.getAttribute('data-slate-editor') === 'true') {
-    const selection = window.getSelection();
-    if (selection?.rangeCount) selection.collapseToEnd();
-    const diagnostics = getComposerDiagnostics();
-    const debuggerDetail = lastTrustedError ? ` Debugger: ${lastTrustedError}` : '';
-    throw new Error(
-      `CLIPBOARD_PASTE_REJECTED: Flow chưa nhận thao tác dán thật (${diagnosticSummary(diagnostics)}). ` +
-      `Prompt vẫn đang nằm trong clipboard; hãy click ô lệnh và nhấn Ctrl+V thủ công.${debuggerDetail}`,
-    );
+  // For Slate editors: try focus + click before DOM fallback
+  if (isSlate) {
+    input.scrollIntoView({ block: 'center', inline: 'center' });
+    input.focus({ preventScroll: true });
+    interactionClick(input);
+    await sleep(300);
   }
 
   selectPromptContents(input);
@@ -519,6 +524,7 @@ async function setPrompt(promptText, { requireReady = true } = {}) {
 
     const clipboardData = new DataTransfer();
     clipboardData.setData('text/plain', promptText);
+    clipboardData.setData('text/html', `<p>${promptText.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</p>`);
     const pasteHandled = !input.dispatchEvent(new ClipboardEvent('paste', {
       bubbles: true,
       cancelable: true,
@@ -530,19 +536,61 @@ async function setPrompt(promptText, { requireReady = true } = {}) {
       document.execCommand('delete', false);
       const inserted = document.execCommand('insertText', false, promptText);
       if (!inserted || !input.textContent?.includes(promptText.slice(0, 20))) {
-        input.replaceChildren();
-        const paragraph = document.createElement('p');
-        paragraph.textContent = promptText;
-        input.appendChild(paragraph);
+        if (isSlate) {
+          // Slate-specific: insert via Slate-compatible DOM structure
+          input.replaceChildren();
+          const slateNode = document.createElement('div');
+          slateNode.setAttribute('data-slate-node', 'element');
+          const slateLeaf = document.createElement('span');
+          slateLeaf.setAttribute('data-slate-node', 'text');
+          const slateString = document.createElement('span');
+          slateString.setAttribute('data-slate-leaf', 'true');
+          const slateContent = document.createElement('span');
+          slateContent.setAttribute('data-slate-string', 'true');
+          slateContent.textContent = promptText;
+          slateString.appendChild(slateContent);
+          slateLeaf.appendChild(slateString);
+          slateNode.appendChild(slateLeaf);
+          input.appendChild(slateNode);
+        } else {
+          input.replaceChildren();
+          const paragraph = document.createElement('p');
+          paragraph.textContent = promptText;
+          input.appendChild(paragraph);
+        }
       }
     }
   }
   input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: promptText }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
-  await sleep(250);
-  const diagnostics = getComposerDiagnostics();
+  // For Slate editors, also fire beforeinput which Slate listens to
+  if (isSlate) {
+    try {
+      input.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: promptText }));
+    } catch (_) { /* beforeinput may not be fully supported */ }
+  }
+  await sleep(isSlate ? 800 : 250);
+
+  // Re-check after DOM fallback — retry focus + click if render button is still disabled
+  let diagnostics = getComposerDiagnostics();
+  if (isSlate && diagnostics.promptLength > 0 && !diagnostics.renderEnabled) {
+    // Prompt text is in the editor but Flow hasn't recognized it yet — try clicking outside and back
+    document.body.click();
+    await sleep(200);
+    input.focus({ preventScroll: true });
+    interactionClick(input);
+    await sleep(500);
+    diagnostics = getComposerDiagnostics();
+  }
+
   if (requireReady && !diagnostics.renderEnabled) {
     const debuggerDetail = lastTrustedError ? ` Debugger: ${lastTrustedError}` : '';
+    if (isSlate && diagnostics.promptLength === 0) {
+      throw new Error(
+        `CLIPBOARD_PASTE_REJECTED: Flow chưa nhận thao tác dán thật (${diagnosticSummary(diagnostics)}). ` +
+        `Prompt vẫn đang nằm trong clipboard; hãy click ô lệnh và nhấn Ctrl+V thủ công.${debuggerDetail}`,
+      );
+    }
     throw new Error(`PROMPT_STATE_REJECTED: Flow hiển thị chữ nhưng chưa ghi nhận câu lệnh (${diagnosticSummary(diagnostics)}).${debuggerDetail}`);
   }
   return { method: 'dom-fallback', diagnostics };
@@ -710,48 +758,44 @@ async function waitForNewVideoResult(previousUrls, timeout = 900000) {
   throw new Error('Google Flow tạo video quá thời gian 15 phút.');
 }
 
-async function clickRenderButton(promptText) {
-  let lastDiagnostics = getComposerDiagnostics();
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < 25000) {
-      await waitWhilePaused();
-      const composer = await waitForComposer();
-      const renderButton = findButtonBySymbol(composer.container, 'arrow_forward');
-      if (!renderButton) throw new Error('Không tìm thấy nút mũi tên Tạo video.');
-      if (!renderButton.disabled && renderButton.getAttribute('aria-disabled') !== 'true') {
-        const beforeClick = getComposerDiagnostics();
-        await trustedElementClick(renderButton);
-        const evidenceStartedAt = Date.now();
-        while (Date.now() - evidenceStartedAt < 8000) {
-          await sleep(350);
-          const promptAlert = findPromptRequiredAlert();
-          if (promptAlert) {
-            findInteractiveByText(/đóng|close/i, promptAlert)?.click();
-            break;
-          }
-          const generationError = findVisibleGenerationError();
-          if (generationError) throw new Error(`Google Flow: ${generationError}`);
-          const afterClick = getComposerDiagnostics();
-          lastDiagnostics = afterClick;
-          const promptWasConsumed = afterClick.composerFound && afterClick.promptLength < beforeClick.promptLength;
-          const buttonBecameBusy = afterClick.composerFound && !afterClick.renderEnabled;
-          const composerClosed = !afterClick.composerFound;
-          const visibleProgress = [...document.querySelectorAll('[role="status"], [aria-live="polite"]')]
-            .some((element) => isVisible(element) && /đang tạo|đang xử lý|generating|processing|queued|rendering/i.test(elementText(element)));
-          if (promptWasConsumed || buttonBecameBusy || composerClosed || visibleProgress) return;
-        }
+async function clickRenderButton() {
+  const composer = await waitForComposer();
+  const renderButton = findButtonBySymbol(composer.container, 'arrow_forward');
+  if (!renderButton) throw new Error('Không tìm thấy nút mũi tên Tạo video.');
 
-        await setPrompt(promptText, { requireReady: true });
-        await sleep(500);
-        break;
-      }
-      lastDiagnostics = getComposerDiagnostics();
-      await sleep(400);
-    }
+  // Wait for button to become enabled (max 15s)
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 15000) {
+    if (!renderButton.disabled && renderButton.getAttribute('aria-disabled') !== 'true') break;
+    await sleep(400);
   }
-  throw new Error(`FLOW_SUBMIT_FAILED: Flow không ghi nhận thao tác bấm Tạo sau 3 lần (${diagnosticSummary(lastDiagnostics)}).`);
+  if (renderButton.disabled || renderButton.getAttribute('aria-disabled') === 'true') {
+    throw new Error(`FLOW_SUBMIT_FAILED: Nút Tạo vẫn bị vô hiệu sau 15 giây (${diagnosticSummary(getComposerDiagnostics())}).`);
+  }
+
+  // Focus editor first, then click submit
+  composer.input.focus({ preventScroll: true });
+  interactionClick(composer.input);
+  await sleep(200);
+
+  await trustedElementClick(renderButton);
+  await sleep(1000);
+
+  // Quick check: if prompt-required alert appears, throw so caller can retry
+  const promptAlert = findPromptRequiredAlert();
+  if (promptAlert) {
+    findInteractiveByText(/đóng|close/i, promptAlert)?.click();
+    throw new Error('FLOW_SUBMIT_PROMPT_REQUIRED: Flow yêu cầu nhập câu lệnh.');
+  }
+
+  // Check for generation error
+  const generationError = findVisibleGenerationError();
+  if (generationError) throw new Error(`Google Flow: ${generationError}`);
 }
+
+
+
+
 
 function bytesToBase64(bytes) {
   let binary = '';
@@ -833,21 +877,93 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       await ensureProjectReady();
       const baselineUrls = new Set(collectVideoResultLinks().map((item) => item.url));
       const videoOptions = await configureVideoOrKeepCurrent(message.options || {});
+
+      // Setup: fill prompt first time and attach reference image (done ONCE)
       await setPrompt(message.prompt, { requireReady: false });
       await sleep(400);
       const reference = await attachReferenceImage(message.imageData);
       await sleep(700);
-      await setPrompt(message.prompt, { requireReady: true });
-      await sleep(500);
-      await clickRenderButton(message.prompt);
-      const result = await waitForNewVideoResult(baselineUrls);
-      sendResponse({
-        success: true,
-        resultPageUrl: result.url,
-        projectUrl: location.href,
-        videoOptions,
-        reference,
-      });
+
+      // Submit loop: fill prompt → click → wait for result. Retry ONLY if click clearly failed.
+      const MAX_SUBMIT_ATTEMPTS = 3;
+      let lastSubmitError = null;
+
+      for (let attempt = 1; attempt <= MAX_SUBMIT_ATTEMPTS; attempt++) {
+        await waitWhilePaused();
+
+        // Re-fill prompt (ensures it's ready for click)
+        await setPrompt(message.prompt, { requireReady: true });
+        await sleep(500);
+
+        try {
+          // Click ONCE
+          await clickRenderButton();
+        } catch (clickError) {
+          lastSubmitError = clickError;
+          console.warn(`[AFF HUB] Submit attempt ${attempt}/${MAX_SUBMIT_ATTEMPTS} click failed:`, clickError.message);
+          if (attempt < MAX_SUBMIT_ATTEMPTS) {
+            await sleep(2000);
+            continue;
+          }
+          throw clickError;
+        }
+
+        // Check if generation is visibly in progress before deciding timeout
+        await sleep(5000); // Wait 5s for Flow to show signs of generation
+
+        const isGenerating = (() => {
+          // Check for visible progress indicators
+          const progressElements = [...document.querySelectorAll(
+            '[role="status"], [aria-live="polite"], [class*="progress" i]'
+          )].filter((el) => isVisible(el) && /\d+%|đang tạo|generating|processing|queued|rendering/i.test(elementText(el)));
+          if (progressElements.length > 0) return true;
+
+          // Check if prompt was consumed (editor is now empty = Flow accepted it)
+          const currentDiag = getComposerDiagnostics();
+          if (currentDiag.composerFound && currentDiag.promptLength === 0) return true;
+
+          // Check if new video thumbnails appeared since baseline
+          const currentLinks = collectVideoResultLinks();
+          if (currentLinks.some((item) => !baselineUrls.has(item.url))) return true;
+
+          return false;
+        })();
+
+        // If generation is in progress, wait the FULL timeout (don't retry!)
+        const waitTimeout = isGenerating ? 900000 : 30000; // 15 min if generating, 30s if no sign
+
+        try {
+          const result = await waitForNewVideoResult(baselineUrls, waitTimeout);
+          // Success!
+          sendResponse({
+            success: true,
+            resultPageUrl: result.url,
+            projectUrl: location.href,
+            videoOptions,
+            reference,
+          });
+          return;
+        } catch (waitError) {
+          lastSubmitError = waitError;
+          console.warn(`[AFF HUB] Submit attempt ${attempt}/${MAX_SUBMIT_ATTEMPTS} wait failed:`, waitError.message);
+
+          if (isGenerating) {
+            // Generation was in progress but no result appeared — don't retry, throw
+            throw waitError;
+          }
+
+          if (attempt < MAX_SUBMIT_ATTEMPTS) {
+            // No sign of generation at all — safe to retry
+            collectVideoResultLinks().forEach((item) => baselineUrls.add(item.url));
+            await sleep(2000);
+            continue;
+          }
+          throw waitError;
+        }
+      }
+
+      // Should not reach here, but just in case
+      throw lastSubmitError || new Error('FLOW_SUBMIT_FAILED: Không thể gửi lệnh tạo video.');
     } catch (error) {
       const code = error.message.includes('AUTH_REQUIRED')
         ? 'AUTH_REQUIRED'
@@ -857,7 +973,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             ? 'FLOW_CONFIG_FAILED'
             : error.message.includes('PROMPT_INPUT_FAILED') || error.message.includes('PROMPT_STATE_REJECTED') || error.message.includes('CLIPBOARD_PASTE_REJECTED')
               ? 'PROMPT_INPUT_FAILED'
-              : error.message.includes('FLOW_SUBMIT_FAILED')
+              : error.message.includes('FLOW_SUBMIT_FAILED') || error.message.includes('FLOW_SUBMIT_PROMPT_REQUIRED')
                 ? 'FLOW_SUBMIT_FAILED'
                 : error.message.includes('REFERENCE_UPLOAD_FAILED')
                   ? 'REFERENCE_UPLOAD_FAILED'

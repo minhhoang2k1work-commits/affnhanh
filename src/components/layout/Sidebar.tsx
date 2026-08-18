@@ -57,6 +57,7 @@ const navGroups = [
       { name: 'Link Cho Video', href: '/videos', icon: Video, badge: 'Sub-ID' },
       { name: 'Accesstrade Hub', href: '/accesstrade', icon: Zap, badge: 'API Live', highlight: true },
       { name: 'Tài Khoản Affiliate', href: '/accounts', icon: KeyRound },
+      { name: 'Bản Quyền Extension', href: '/admin/licenses', icon: KeyRound, badge: 'Mới', highlight: true },
     ],
   },
   {

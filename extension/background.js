@@ -23,7 +23,7 @@ async function ensurePaired() {
     const response = await fetch(`${serverUrl}/api/extension/pair`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceToken, extensionVersion: '1.8.1' }),
+      body: JSON.stringify({ deviceToken, extensionVersion: '1.8.2' }),
     });
     const data = await response.json();
     if (data.deviceToken) {
@@ -36,14 +36,42 @@ async function ensurePaired() {
   return deviceToken;
 }
 
+let lastLicenseCheck = 0;
+let lastLicenseResult = { valid: false };
+
+async function checkLicense() {
+  const data = await chrome.storage.local.get(['licenseKey', 'deviceToken']);
+  if (!data.licenseKey) return { valid: false };
+  
+  if (Date.now() - lastLicenseCheck < 5 * 60 * 1000) {
+    return lastLicenseResult;
+  }
+
+  const { serverUrl } = await getConfig();
+  try {
+    const res = await fetch(`${serverUrl}/api/extension/auth/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ licenseKey: data.licenseKey, deviceToken: data.deviceToken || 'temp' })
+    });
+    const result = await res.json();
+    lastLicenseCheck = Date.now();
+    lastLicenseResult = result;
+    return result;
+  } catch (error) {
+    return { valid: false };
+  }
+}
+
 async function sendHeartbeat() {
   const { serverUrl, deviceToken } = await getConfig();
   if (!deviceToken) return ensurePaired();
   try {
+    const { licenseKey } = await chrome.storage.local.get('licenseKey');
     await fetch(`${serverUrl}/api/extension/heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceToken }),
+      body: JSON.stringify({ deviceToken, licenseKey }),
     });
   } catch (error) {
     console.warn('[AFF HUB Ext] Heartbeat error:', error.message);
@@ -52,9 +80,18 @@ async function sendHeartbeat() {
 
 async function pollNextJob() {
   if (activeScanJob || isVideoPipelineBusy()) return;
-  const { serverUrl } = await getConfig();
+  const license = await checkLicense();
+  if (!license.valid) return;
+
+  const { serverUrl, deviceToken } = await getConfig();
+  const { licenseKey } = await chrome.storage.local.get('licenseKey');
   try {
-    const response = await fetch(`${serverUrl}/api/extension/jobs/next`);
+    const params = new URLSearchParams();
+    if (deviceToken) params.append('deviceToken', deviceToken);
+    if (licenseKey) params.append('licenseKey', licenseKey);
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+
+    const response = await fetch(`${serverUrl}/api/extension/jobs/next${queryString}`);
     const data = await response.json();
     if (!data.hasJob || !data.job) return;
     const job = data.job;
@@ -194,8 +231,9 @@ async function pasteTrustedText(tabId, text, x, y, mode = 'native') {
     return { ok: false, error: `CLIPBOARD_WRITE_FAILED: ${error?.message || String(error)}` };
   }
 
-  return withTrustedFlowInput(tabId, async (target) => {
+  const doPaste = async (target) => {
     await dispatchTrustedMouseClick(target, x, y);
+    await sleep(150);
     await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
       type: 'rawKeyDown', key: 'a', code: 'KeyA', modifiers: 2,
       windowsVirtualKeyCode: 65, commands: ['selectAll'],
@@ -203,15 +241,18 @@ async function pasteTrustedText(tabId, text, x, y, mode = 'native') {
     await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
       type: 'keyUp', key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65,
     });
+    await sleep(100);
     const pasteKeyDown = {
       type: 'rawKeyDown', key: 'v', code: 'KeyV', modifiers: 2,
       windowsVirtualKeyCode: 86,
     };
     if (mode === 'command') pasteKeyDown.commands = ['paste'];
     await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', pasteKeyDown);
+    await sleep(80);
     await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
       type: 'keyUp', key: 'v', code: 'KeyV', modifiers: 2, windowsVirtualKeyCode: 86,
     });
+    await sleep(100);
     await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
       type: 'rawKeyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39,
     });
@@ -219,8 +260,17 @@ async function pasteTrustedText(tabId, text, x, y, mode = 'native') {
       type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39,
     });
     return { ok: true, method: `chrome-debugger-clipboard-paste-${mode}`, length: text.length };
-  });
+  };
+
+  // Try with retry: if debugger attach fails, wait and retry once
+  let result = await withTrustedFlowInput(tabId, doPaste);
+  if (!result.ok && /already attached|another debugger|target is being debugged|Cannot access/i.test(result.error || '')) {
+    await sleep(1500);
+    result = await withTrustedFlowInput(tabId, doPaste);
+  }
+  return result;
 }
+
 
 async function insertTrustedText(tabId, text, x, y, mode = 'chunk') {
   if (typeof text !== 'string' || !text.trim()) return { ok: false, error: 'Câu lệnh trống.' };
@@ -407,6 +457,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const pipeline = (await chrome.storage.local.get('videoPipelineState')).videoPipelineState || null;
       return sendResponse({ connected: Boolean(deviceToken), activeScanJob, videoPipelineState: pipeline });
     }
+    if (message.action === 'CHECK_LICENSE') {
+      const result = await checkLicense();
+      return sendResponse(result);
+    }
     if (message.action === 'VIDEO_BROWSER_START') return sendResponse(await startVideoBrowserPipeline(message.payload));
     if (message.action === 'VIDEO_BROWSER_PAUSE') return sendResponse(await pauseVideoBrowserPipeline());
     if (message.action === 'VIDEO_BROWSER_RESUME') return sendResponse(await resumeVideoBrowserPipeline());
@@ -453,6 +507,9 @@ function isVideoPipelineBusy() {
 }
 
 async function startVideoBrowserPipeline(payload, options = {}) {
+  const license = await checkLicense();
+  if (!license.valid) return { started: false, error: 'License không hợp lệ. Vui lòng kiểm tra lại.' };
+
   if (isVideoPipelineBusy()) return { started: false, error: 'Một pipeline video đang chạy.' };
   if (!payload?.imageData) return { started: false, error: 'Thiếu ảnh sản phẩm.' };
   let portableImageData;
@@ -837,41 +894,108 @@ async function runVideoBrowserPipeline(payload, controller, options = {}) {
       await updateVideoState({ promptStatus: 'done', progress: 30, statusText: 'Đã nhận đủ hai prompt video.' });
     }
 
-    if (startIndex <= 1) {
+    if (startIndex <= 1 && startIndex <= 2) {
+      // ===== PARALLEL VIDEO GENERATION =====
+      // Submit both videos simultaneously for maximum speed
       currentStep = 'video1';
       await waitUntilRunnable(controller);
-      await updateVideoState({ video1Status: 'active', progress: 35, statusText: 'Đang cấu hình video 1 và gắn ảnh tham chiếu trên Google Flow...' });
-      artifacts.video1 = await generateFlowVideo(payload.flowUrl, payload.imageData, artifacts.prompt1, controller, 1, payload.flowOptions);
-      artifacts.video1Url = artifacts.video1.videoUrl || null;
-      lastVideoArtifacts = { ...artifacts };
       await updateVideoState({
-        video1Status: 'done',
-        progress: 55,
-        statusText: artifacts.video1.videoOptions?.configurationWarning
-          ? 'Video 1 đã hoàn thành bằng cấu hình hiện tại của Flow.'
-          : 'Video 1 đã hoàn thành trên Flow.',
-        resultLinks: [artifacts.video1.resultPageUrl].filter(Boolean),
-        appliedFlowOptions: artifacts.video1.videoOptions || requestedFlowOptions,
-        configurationWarning: artifacts.video1.videoOptions?.configurationWarning || null,
+        video1Status: 'active',
+        video2Status: 'active',
+        progress: 35,
+        statusText: 'Đang tạo đồng thời 2 video trên Google Flow...',
       });
-    }
 
-    if (startIndex <= 2) {
-      currentStep = 'video2';
-      await waitUntilRunnable(controller);
-      await updateVideoState({ video2Status: 'active', progress: 60, statusText: 'Đang cấu hình video 2 và gắn ảnh tham chiếu trên Google Flow...' });
-      artifacts.video2 = await generateFlowVideo(payload.flowUrl, payload.imageData, artifacts.prompt2, controller, 2, payload.flowOptions);
-      artifacts.video2Url = artifacts.video2.videoUrl || null;
+      const videoPromises = [
+        generateFlowVideo(payload.flowUrl, payload.imageData, artifacts.prompt1, controller, 1, payload.flowOptions)
+          .then((result) => ({ success: true, sequence: 1, result }))
+          .catch((error) => ({ success: false, sequence: 1, error })),
+        generateFlowVideo(payload.flowUrl, payload.imageData, artifacts.prompt2, controller, 2, payload.flowOptions)
+          .then((result) => ({ success: true, sequence: 2, result }))
+          .catch((error) => ({ success: false, sequence: 2, error })),
+      ];
+
+      const [outcome1, outcome2] = await Promise.all(videoPromises);
+
+      // Process video 1 result
+      if (outcome1.success) {
+        artifacts.video1 = outcome1.result;
+        artifacts.video1Url = outcome1.result.videoUrl || null;
+        await updateVideoState({
+          video1Status: 'done',
+          progress: outcome2.success ? 80 : 55,
+          resultLinks: [outcome1.result.resultPageUrl].filter(Boolean),
+          appliedFlowOptions: outcome1.result.videoOptions || requestedFlowOptions,
+          configurationWarning: outcome1.result.videoOptions?.configurationWarning || null,
+        });
+      } else {
+        await updateVideoState({ video1Status: 'error' });
+      }
+
+      // Process video 2 result
+      if (outcome2.success) {
+        artifacts.video2 = outcome2.result;
+        artifacts.video2Url = outcome2.result.videoUrl || null;
+        await updateVideoState({
+          video2Status: 'done',
+          progress: 80,
+          resultLinks: [artifacts.video1?.resultPageUrl, outcome2.result.resultPageUrl].filter(Boolean),
+          configurationWarning: outcome2.result.videoOptions?.configurationWarning || outcome1.result?.videoOptions?.configurationWarning || null,
+        });
+      } else {
+        await updateVideoState({ video2Status: 'error' });
+      }
+
       lastVideoArtifacts = { ...artifacts };
       await updateVideoState({
-        video2Status: 'done',
-        progress: 80,
-        statusText: artifacts.video2.videoOptions?.configurationWarning
-          ? 'Video 2 đã hoàn thành bằng cấu hình hiện tại của Flow.'
-          : 'Video 2 đã hoàn thành trên Flow.',
-        resultLinks: [artifacts.video1?.resultPageUrl, artifacts.video2?.resultPageUrl].filter(Boolean),
-        configurationWarning: artifacts.video2.videoOptions?.configurationWarning || artifacts.video1?.videoOptions?.configurationWarning || null,
+        statusText: outcome1.success && outcome2.success
+          ? 'Cả hai video đã hoàn thành trên Flow.'
+          : outcome1.success
+            ? 'Video 1 hoàn thành, video 2 thất bại.'
+            : outcome2.success
+              ? 'Video 2 hoàn thành, video 1 thất bại.'
+              : 'Cả hai video đều thất bại.',
       });
+
+      // If both failed, throw the first error
+      if (!outcome1.success && !outcome2.success) {
+        throw outcome1.error;
+      }
+      // If one failed, we continue with whatever we have (merge will handle missing video)
+    } else {
+      // ===== SEQUENTIAL FALLBACK (for resume from specific step) =====
+      if (startIndex <= 1) {
+        currentStep = 'video1';
+        await waitUntilRunnable(controller);
+        await updateVideoState({ video1Status: 'active', progress: 35, statusText: 'Đang tạo video 1 trên Google Flow...' });
+        artifacts.video1 = await generateFlowVideo(payload.flowUrl, payload.imageData, artifacts.prompt1, controller, 1, payload.flowOptions);
+        artifacts.video1Url = artifacts.video1.videoUrl || null;
+        lastVideoArtifacts = { ...artifacts };
+        await updateVideoState({
+          video1Status: 'done',
+          progress: 55,
+          statusText: 'Video 1 đã hoàn thành trên Flow.',
+          resultLinks: [artifacts.video1.resultPageUrl].filter(Boolean),
+          appliedFlowOptions: artifacts.video1.videoOptions || requestedFlowOptions,
+          configurationWarning: artifacts.video1.videoOptions?.configurationWarning || null,
+        });
+      }
+
+      if (startIndex <= 2) {
+        currentStep = 'video2';
+        await waitUntilRunnable(controller);
+        await updateVideoState({ video2Status: 'active', progress: 60, statusText: 'Đang tạo video 2 trên Google Flow...' });
+        artifacts.video2 = await generateFlowVideo(payload.flowUrl, payload.imageData, artifacts.prompt2, controller, 2, payload.flowOptions);
+        artifacts.video2Url = artifacts.video2.videoUrl || null;
+        lastVideoArtifacts = { ...artifacts };
+        await updateVideoState({
+          video2Status: 'done',
+          progress: 80,
+          statusText: 'Video 2 đã hoàn thành trên Flow.',
+          resultLinks: [artifacts.video1?.resultPageUrl, artifacts.video2?.resultPageUrl].filter(Boolean),
+          configurationWarning: artifacts.video2.videoOptions?.configurationWarning || artifacts.video1?.videoOptions?.configurationWarning || null,
+        });
+      }
     }
 
     currentStep = 'merge';

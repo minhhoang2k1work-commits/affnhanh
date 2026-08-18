@@ -1,12 +1,56 @@
 // AFF HUB - ChatGPT page controller
 
 const CHATGPT_SELECTORS = {
-  editor: '#prompt-textarea, textarea[data-id="root"], main div[contenteditable="true"], form div[contenteditable="true"]',
-  fileInput: 'input[type="file"][accept*="image"], input[type="file"]',
-  attachButton: 'button[data-testid="attach-button"], button[data-testid="composer-plus-btn"], button[aria-label*="Attach" i], button[aria-label*="Upload" i], button[aria-label*="Add files" i]',
-  sendButton: 'button[data-testid="send-button"], button[data-testid="composer-submit-button"], button[aria-label*="Send" i], button[aria-label*="Gửi" i]',
-  stopButton: 'button[data-testid="stop-button"], button[data-testid*="stop" i], button[aria-label*="Stop" i], button[aria-label*="Dừng" i]',
+  editor: [
+    '#prompt-textarea',
+    'textarea[data-id="root"]',
+    'div[id="prompt-textarea"][contenteditable="true"]',
+    'main div[contenteditable="true"]',
+    'form div[contenteditable="true"]',
+    'div[contenteditable="true"][role="textbox"]',
+  ].join(','),
+  fileInput: 'input[type="file"][accept*="image"], input[type="file"][multiple], input[type="file"]',
+  attachButton: [
+    'button[data-testid="composer-attach-button"]',
+    'button[data-testid="attach-button"]',
+    'button[data-testid="composer-plus-btn"]',
+    'button[aria-label*="Attach" i]',
+    'button[aria-label*="Upload" i]',
+    'button[aria-label*="Add files" i]',
+    'button[aria-label*="Đính kèm" i]',
+    'button[aria-label*="Tải lên" i]',
+    'button[aria-label*="Thêm tệp" i]',
+  ].join(','),
+  uploadMenuItem: [
+    '[role="menuitem"]',
+    '[role="option"]',
+    'button',
+    'a',
+  ].join(','),
+  sendButton: [
+    'button[data-testid="send-button"]',
+    'button[data-testid="composer-send-button"]',
+    'button[data-testid="composer-submit-button"]',
+    'button[aria-label*="Send" i]',
+    'button[aria-label*="Gửi" i]',
+  ].join(','),
+  stopButton: [
+    'button[data-testid="stop-button"]',
+    'button[data-testid*="stop" i]',
+    'button[aria-label*="Stop" i]',
+    'button[aria-label*="Dừng" i]',
+  ].join(','),
   assistantMessage: '[data-turn="assistant"], [data-message-author-role="assistant"]',
+  imagePreview: [
+    'img[alt*="upload" i]',
+    'img[alt*="product" i]',
+    'img[alt*="Uploaded" i]',
+    '[data-testid*="attachment" i] img',
+    '[data-testid*="image" i] img',
+    '[class*="attachment" i] img',
+    '[class*="preview" i] img',
+    '[class*="thumbnail" i] img',
+  ].join(','),
 };
 
 let operationControl = { cancelled: false, paused: false };
@@ -23,6 +67,13 @@ async function waitWhilePaused() {
   }
 }
 
+function isVisible(element) {
+  if (!element) return false;
+  const rect = element.getBoundingClientRect();
+  const style = getComputedStyle(element);
+  return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+}
+
 async function waitForElement(selector, timeout = 20000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeout) {
@@ -34,7 +85,7 @@ async function waitForElement(selector, timeout = 20000) {
   throw new Error(`Không tìm thấy phần tử ChatGPT: ${selector}`);
 }
 
-async function urlToFile(urlOrBase64, filename = 'product.jpg') {
+async function urlToFile(urlOrBase64, filename = 'aff-product-reference.jpg') {
   if (urlOrBase64.startsWith('data:')) {
     const [header, encoded] = urlOrBase64.split(',');
     const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
@@ -49,30 +100,96 @@ async function urlToFile(urlOrBase64, filename = 'product.jpg') {
 }
 
 function findButtonByText(pattern) {
-  return [...document.querySelectorAll('button, [role="menuitem"]')]
-    .find((element) => pattern.test((element.innerText || element.textContent || '').trim()));
+  return [...document.querySelectorAll('button, [role="menuitem"], [role="option"]')]
+    .find((element) => isVisible(element) && pattern.test((element.innerText || element.textContent || '').trim()));
+}
+
+function countImageAttachments() {
+  // Count visible image previews in the composer area
+  const editor = document.querySelector(CHATGPT_SELECTORS.editor);
+  if (!editor) return 0;
+
+  // Walk up to the form/composer container
+  let composerContainer = editor.parentElement;
+  for (let depth = 0; composerContainer && composerContainer !== document.body && depth < 10; depth++) {
+    if (composerContainer.tagName === 'FORM' || composerContainer.querySelector(CHATGPT_SELECTORS.sendButton)) break;
+    composerContainer = composerContainer.parentElement;
+  }
+  if (!composerContainer || composerContainer === document.body) composerContainer = editor.parentElement;
+
+  // Look for image previews/thumbnails within the composer
+  const previewImages = composerContainer.querySelectorAll(CHATGPT_SELECTORS.imagePreview);
+  let count = [...previewImages].filter(isVisible).length;
+
+  // Also check for any visible remove/delete buttons near images (alternative indicator)
+  if (count === 0) {
+    const removeButtons = composerContainer.querySelectorAll(
+      'button[aria-label*="Remove" i], button[aria-label*="Xóa" i], button[aria-label*="Delete" i]'
+    );
+    count = [...removeButtons].filter(isVisible).length;
+  }
+
+  // Also check for generic file attachment indicators
+  if (count === 0) {
+    const attachmentContainers = composerContainer.querySelectorAll(
+      '[class*="attachment" i], [class*="file-item" i], [class*="uploaded" i]'
+    );
+    count = [...attachmentContainers].filter((el) => isVisible(el) && el.querySelector('img')).length;
+  }
+
+  return count;
 }
 
 async function getFileInput() {
+  // Strategy 1: Direct file input already in DOM
   let input = document.querySelector(CHATGPT_SELECTORS.fileInput);
   if (input) return input;
+
+  // Strategy 2: Click attach button to reveal file input
   const attachButton = document.querySelector(CHATGPT_SELECTORS.attachButton);
   if (attachButton) {
     attachButton.click();
-    await sleep(600);
+    await sleep(800);
+
     input = document.querySelector(CHATGPT_SELECTORS.fileInput);
     if (input) return input;
-    const uploadItem = findButtonByText(/upload|tải (ảnh|tệp)|add photos|photos and files/i);
+
+    // Strategy 3: Look for upload menu item in dropdown
+    const uploadItem = findButtonByText(
+      /upload|tải (ảnh|tệp|lên)|add photos|photos and files|from computer|từ máy tính|chọn tệp/i
+    );
     if (uploadItem) {
       uploadItem.click();
-      await sleep(500);
+      await sleep(800);
       input = document.querySelector(CHATGPT_SELECTORS.fileInput);
+      if (input) return input;
     }
+
+    // Strategy 4: Try all visible menu items that could be upload options
+    const menuItems = [...document.querySelectorAll(CHATGPT_SELECTORS.uploadMenuItem)]
+      .filter((el) => isVisible(el) && /upload|file|photo|image|ảnh|tệp|tải/i.test(
+        (el.innerText || el.textContent || el.getAttribute('aria-label') || '').trim()
+      ));
+    for (const item of menuItems) {
+      item.click();
+      await sleep(600);
+      input = document.querySelector(CHATGPT_SELECTORS.fileInput);
+      if (input) return input;
+    }
+
+    // Close any menu that may be open
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+    await sleep(300);
   }
-  return input || waitForElement(CHATGPT_SELECTORS.fileInput, 10000);
+
+  // Strategy 5: Search entire DOM for hidden file inputs
+  const allInputs = [...document.querySelectorAll('input[type="file"]')];
+  if (allInputs.length > 0) return allInputs[0];
+
+  return waitForElement(CHATGPT_SELECTORS.fileInput, 10000);
 }
 
-async function uploadImage(imageData) {
+async function uploadViaFileInput(imageData) {
   const fileInput = await getFileInput();
   const file = await urlToFile(imageData);
   const dataTransfer = new DataTransfer();
@@ -80,8 +197,90 @@ async function uploadImage(imageData) {
   fileInput.files = dataTransfer.files;
   fileInput.dispatchEvent(new Event('input', { bubbles: true }));
   fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-  await sleep(1800);
+  await sleep(2500);
   await waitWhilePaused();
+  return countImageAttachments() > 0;
+}
+
+async function uploadViaClipboardPaste(imageData) {
+  const editor = document.querySelector(CHATGPT_SELECTORS.editor);
+  if (!editor) return false;
+
+  const file = await urlToFile(imageData);
+  editor.focus();
+  await sleep(200);
+
+  const clipboardData = new DataTransfer();
+  clipboardData.items.add(file);
+
+  const pasteEvent = new ClipboardEvent('paste', {
+    bubbles: true,
+    cancelable: true,
+    clipboardData,
+  });
+  editor.dispatchEvent(pasteEvent);
+  await sleep(2500);
+  await waitWhilePaused();
+  return countImageAttachments() > 0;
+}
+
+async function uploadViaDragDrop(imageData) {
+  const editor = document.querySelector(CHATGPT_SELECTORS.editor);
+  if (!editor) return false;
+
+  const file = await urlToFile(imageData);
+  const dataTransfer = new DataTransfer();
+  dataTransfer.items.add(file);
+
+  const rect = editor.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const evtInit = { bubbles: true, cancelable: true, clientX: cx, clientY: cy, dataTransfer };
+
+  editor.dispatchEvent(new DragEvent('dragenter', evtInit));
+  editor.dispatchEvent(new DragEvent('dragover', evtInit));
+  await sleep(100);
+  editor.dispatchEvent(new DragEvent('drop', evtInit));
+  await sleep(2500);
+  await waitWhilePaused();
+  return countImageAttachments() > 0;
+}
+
+async function uploadImage(imageData) {
+  const beforeCount = countImageAttachments();
+
+  // Method 1: Standard file input
+  console.log('[AFF HUB] Uploading image via file input...');
+  let uploaded = await uploadViaFileInput(imageData);
+  if (!uploaded && countImageAttachments() > beforeCount) uploaded = true;
+  if (uploaded) {
+    console.log('[AFF HUB] Image uploaded via file input ✓');
+    return;
+  }
+
+  // Method 2: Clipboard paste
+  console.log('[AFF HUB] File input failed, trying clipboard paste...');
+  uploaded = await uploadViaClipboardPaste(imageData);
+  if (!uploaded && countImageAttachments() > beforeCount) uploaded = true;
+  if (uploaded) {
+    console.log('[AFF HUB] Image uploaded via clipboard paste ✓');
+    return;
+  }
+
+  // Method 3: Drag and drop
+  console.log('[AFF HUB] Clipboard paste failed, trying drag-and-drop...');
+  uploaded = await uploadViaDragDrop(imageData);
+  if (!uploaded && countImageAttachments() > beforeCount) uploaded = true;
+  if (uploaded) {
+    console.log('[AFF HUB] Image uploaded via drag-and-drop ✓');
+    return;
+  }
+
+  // All methods failed
+  throw new Error(
+    'IMAGE_UPLOAD_FAILED: Không thể gửi ảnh sản phẩm lên ChatGPT. ' +
+    'Hãy kiểm tra ChatGPT có cho phép gửi ảnh hay không (cần GPT-4 hoặc Plus).'
+  );
 }
 
 function setEditorText(text) {
@@ -210,7 +409,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } catch (error) {
       sendResponse({
         success: false,
-        code: error.message.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED' : undefined,
+        code: error.message.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED'
+          : error.message.includes('IMAGE_UPLOAD_FAILED') ? 'IMAGE_UPLOAD_FAILED'
+          : undefined,
         error: error.message === 'PIPELINE_CANCELLED' ? 'Pipeline đã bị hủy.' : error.message,
       });
     }

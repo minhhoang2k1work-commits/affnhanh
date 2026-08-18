@@ -276,12 +276,28 @@
     </div>
   </div>
 
-  <div class="tabs">
-    <div class="tab active" data-tab="tab-scan">⚡ Quét Shop</div>
-    <div class="tab" data-tab="tab-video">🎬 Video AI</div>
+  <div id="license-gate" style="display: none; margin-bottom: 12px;">
+    <div class="card">
+      <div class="card-title">KÍCH HOẠT BẢN QUYỀN</div>
+      <input id="licenseKeyInput" type="text" placeholder="AFF-XXXX-XXXX-XXXX" />
+      <button id="activateLicenseBtn" class="btn btn-primary" style="margin-top: 8px;">Kích hoạt</button>
+      <div id="licenseMessage" style="font-size: 11px; margin-top: 8px; text-align: center;"></div>
+    </div>
   </div>
 
+  <div id="main-content" style="display: none;">
+    <div class="tabs">
+      <div class="tab active" data-tab="tab-scan">⚡ Quét Shop</div>
+      <div class="tab" data-tab="tab-video">🎬 Video AI</div>
+    </div>
+
   <div id="tab-scan" class="tab-content active">
+    <div class="card">
+      <div class="card-title">BẢN QUYỀN</div>
+      <div id="licenseInfo" style="font-size: 11px; margin-bottom: 8px; color: #94a3b8;">Đang tải...</div>
+      <button id="removeLicenseBtn" class="btn btn-danger" style="padding: 6px;">Xóa License</button>
+    </div>
+
     <div class="card">
       <div class="card-title">Trang hiện tại</div>
       <div id="currentPage" class="card-value">Đang kiểm tra...</div>
@@ -413,9 +429,10 @@
       </div>
     </div>
   </div>
+</div>
 
   <div class="footer">
-    AFF HUB Chrome Extension Bridge v1.8.1
+    AFF HUB Chrome Extension Bridge v1.8.2
   </div>
 
   <script src="popup.js"></script>

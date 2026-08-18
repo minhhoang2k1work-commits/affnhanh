@@ -5,6 +5,18 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
+    const url = new URL(req.url);
+    const deviceToken = url.searchParams.get('deviceToken');
+    const licenseKey = url.searchParams.get('licenseKey');
+
+    // Update lastSeenAt for the requesting device if registered
+    if (deviceToken) {
+      db.licenseDevice.updateMany({
+        where: { deviceToken },
+        data: { lastSeenAt: new Date() },
+      }).catch(() => {});
+    }
+
     const user = await db.user.findFirst();
     if (!user) {
       return NextResponse.json({ hasJob: false });

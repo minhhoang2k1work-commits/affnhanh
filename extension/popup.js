@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const stored = await chrome.storage.local.get([
     'deviceToken', 'serverUrl', 'chatgptUrl', 'flowUrl', 'flowReferenceMode',
-    'flowAspectRatio', 'flowDuration', 'videoProductUrl', 'videoPipelineState',
+    'flowAspectRatio', 'flowDuration', 'videoProductUrl', 'videoPipelineState', 'licenseKey',
   ]);
   if (stored.deviceToken) deviceToken.textContent = `Device: ${stored.deviceToken.substring(0, 16)}...`;
   if (stored.serverUrl && serverSelect) serverSelect.value = stored.serverUrl;
@@ -42,6 +42,115 @@ document.addEventListener('DOMContentLoaded', async () => {
     await chrome.storage.local.set({ serverUrl: selectedUrl, userSetServer: true });
     await sendRuntime({ action: 'SYNC_SERVER_URL', serverUrl: selectedUrl }).catch(() => {});
   });
+
+  const licenseGate = $('license-gate');
+  const mainContent = $('main-content');
+  const licenseKeyInput = $('licenseKeyInput');
+  const activateLicenseBtn = $('activateLicenseBtn');
+  const licenseMessage = $('licenseMessage');
+  const licenseInfo = $('licenseInfo');
+  const removeLicenseBtn = $('removeLicenseBtn');
+  let currentLicenseKey = stored.licenseKey || null;
+
+  async function checkLicense() {
+    if (!currentLicenseKey) {
+      showLicenseGate();
+      return;
+    }
+    try {
+      const url = stored.serverUrl || 'http://localhost:3000';
+      const token = stored.deviceToken || 'temp';
+      const res = await fetch(`${url}/api/extension/auth/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ licenseKey: currentLicenseKey, deviceToken: token })
+      });
+      const data = await res.json();
+      if (data.valid || data.success) {
+        hideLicenseGate();
+        if (licenseInfo) {
+          const expText = data.expiresAt ? new Date(data.expiresAt).toLocaleDateString('vi-VN') : 'Vĩnh viễn';
+          licenseInfo.textContent = `👤 ${data.licenseName || 'Bản quyền'} | 📅 HSD: ${expText}`;
+        }
+      } else {
+        showLicenseGate(data.reason || 'License không hợp lệ hoặc đã hết hạn.');
+      }
+    } catch (e) {
+      showLicenseGate('Không thể kết nối tới server.');
+    }
+  }
+
+  function showLicenseGate(msg) {
+    if (licenseGate) licenseGate.style.display = 'block';
+    if (mainContent) mainContent.style.display = 'none';
+    if (msg && licenseMessage) {
+      licenseMessage.style.color = '#ef4444';
+      licenseMessage.textContent = msg;
+    }
+  }
+
+  function hideLicenseGate() {
+    if (licenseGate) licenseGate.style.display = 'none';
+    if (mainContent) mainContent.style.display = 'block';
+  }
+
+  if (activateLicenseBtn) {
+    activateLicenseBtn.addEventListener('click', async () => {
+      const key = licenseKeyInput.value.trim();
+      if (!key) {
+        licenseMessage.style.color = '#ef4444';
+        licenseMessage.textContent = 'Vui lòng nhập mã kích hoạt';
+        return;
+      }
+      activateLicenseBtn.disabled = true;
+      activateLicenseBtn.textContent = 'Đang xử lý...';
+      try {
+        const token = stored.deviceToken || 'temp_' + Date.now();
+        const url = stored.serverUrl || 'http://localhost:3000';
+        const res = await fetch(`${url}/api/extension/auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            licenseKey: key,
+            deviceToken: token,
+            deviceName: navigator.userAgent.slice(0, 100)
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          await chrome.storage.local.set({ licenseKey: key, deviceToken: data.deviceToken || token });
+          stored.deviceToken = data.deviceToken || token;
+          currentLicenseKey = key;
+          licenseMessage.style.color = '#10b981';
+          licenseMessage.textContent = 'Kích hoạt thành công!';
+          setTimeout(() => {
+            hideLicenseGate();
+            checkLicense();
+          }, 1000);
+        } else {
+          licenseMessage.style.color = '#ef4444';
+          licenseMessage.textContent = data.error || 'Kích hoạt thất bại';
+        }
+      } catch (e) {
+        licenseMessage.style.color = '#ef4444';
+        licenseMessage.textContent = 'Lỗi kết nối';
+      } finally {
+        activateLicenseBtn.disabled = false;
+        activateLicenseBtn.textContent = 'Kích hoạt';
+      }
+    });
+  }
+
+  if (removeLicenseBtn) {
+    removeLicenseBtn.addEventListener('click', async () => {
+      await chrome.storage.local.remove('licenseKey');
+      currentLicenseKey = null;
+      if (licenseKeyInput) licenseKeyInput.value = '';
+      showLicenseGate();
+    });
+  }
+
+  checkLicense();
 
   scanBtn.addEventListener('click', async () => {
     if (!activeTab?.id) return;

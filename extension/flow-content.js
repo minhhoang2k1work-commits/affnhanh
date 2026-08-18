@@ -336,6 +336,36 @@ async function configureVideo(options = {}) {
   return { ...settings, summary };
 }
 
+function closeVideoConfigMenu() {
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+  document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape', bubbles: true }));
+}
+
+async function configureVideoOrKeepCurrent(options = {}) {
+  try {
+    const configured = await configureVideo(options);
+    return { ...configured, configurationApplied: true, usedCurrentConfiguration: false };
+  } catch (error) {
+    if (!error.message.includes('FLOW_CONFIG_FAILED')) throw error;
+
+    closeVideoConfigMenu();
+    await sleep(300);
+    const composer = getComposerContext();
+    const configButton = composer ? findVideoConfigButton(composer) : null;
+    const summary = configButton
+      ? `${elementText(configButton)} ${popupContentText(configButton)}`.replace(/\s+/g, ' ').trim()
+      : 'Cấu hình hiện tại trên Google Flow';
+    const configurationWarning = `Không áp dụng được cấu hình yêu cầu; tiếp tục bằng cấu hình hiện tại của Flow. ${error.message}`;
+    console.warn('[AFF HUB]', configurationWarning);
+    return {
+      configurationApplied: false,
+      usedCurrentConfiguration: true,
+      summary,
+      configurationWarning,
+    };
+  }
+}
+
 async function urlToFile(urlOrBase64, filename = 'aff-product-reference.jpg') {
   if (urlOrBase64.startsWith('data:')) {
     const [header, encoded] = urlOrBase64.split(',');
@@ -361,13 +391,34 @@ function setPrompt(promptText) {
     if (setter) setter.call(input, promptText);
     else input.value = promptText;
   } else {
-    document.execCommand('selectAll', false);
-    const inserted = document.execCommand('insertText', false, promptText);
-    if (!inserted || !input.textContent?.includes(promptText.slice(0, 20))) {
-      input.replaceChildren();
-      const paragraph = document.createElement('p');
-      paragraph.textContent = promptText;
-      input.appendChild(paragraph);
+    const selection = window.getSelection();
+    const selectEditorContents = () => {
+      const range = document.createRange();
+      range.selectNodeContents(input);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    };
+    selectEditorContents();
+    document.execCommand('delete', false);
+
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', promptText);
+    const pasteHandled = !input.dispatchEvent(new ClipboardEvent('paste', {
+      bubbles: true,
+      cancelable: true,
+      clipboardData,
+    }));
+
+    if (!pasteHandled || !input.textContent?.includes(promptText.slice(0, 20))) {
+      selectEditorContents();
+      document.execCommand('delete', false);
+      const inserted = document.execCommand('insertText', false, promptText);
+      if (!inserted || !input.textContent?.includes(promptText.slice(0, 20))) {
+        input.replaceChildren();
+        const paragraph = document.createElement('p');
+        paragraph.textContent = promptText;
+        input.appendChild(paragraph);
+      }
     }
   }
   input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: promptText }));
@@ -376,7 +427,12 @@ function setPrompt(promptText) {
 
 function countComposerReferences() {
   const composer = getComposerContext();
-  return composer ? composer.container.querySelectorAll('button img, [role="button"] img').length : 0;
+  return composer ? composer.container.querySelectorAll([
+    'img[src]',
+    '[data-testid*="attachment" i]',
+    '[aria-label*="remove image" i]',
+    '[aria-label*="xóa ảnh" i]',
+  ].join(',')).length : 0;
 }
 
 async function attachReferenceImage(imageData) {
@@ -393,9 +449,6 @@ async function attachReferenceImage(imageData) {
   );
   const imageSource = (image) => image.currentSrc || image.src || image.getAttribute('src') || '';
   const beforeImageSources = new Set([...dialog.querySelectorAll('img')].map(imageSource).filter(Boolean));
-  const beforeAddButtons = [...dialog.querySelectorAll('button')]
-    .filter((button) => /thêm vào câu lệnh|add to prompt/i.test(elementText(button)));
-
   const fileInput = dialog.querySelector(FLOW_SELECTORS.fileInput) || document.querySelector(FLOW_SELECTORS.fileInput);
   if (!fileInput) throw new Error('REFERENCE_UPLOAD_FAILED: Không tìm thấy input tải ảnh.');
   const file = await urlToFile(imageData);
@@ -406,44 +459,83 @@ async function attachReferenceImage(imageData) {
   fileInput.dispatchEvent(new Event('change', { bubbles: true }));
 
   const startedAt = Date.now();
-  let attachClicked = false;
+  let attachClickedAt = 0;
+  let attachClickAttempts = 0;
+  const uploadedFilenamePattern = /aff-product-reference\.jpg/i;
   while (Date.now() - startedAt < 60000) {
     await waitWhilePaused();
-    if (!dialog.isConnected || !isVisible(dialog)) {
-      attachClicked = true;
-      break;
+    const visibleDialogs = [...document.querySelectorAll('[role="dialog"]')].filter(isVisible);
+    const currentDialog = visibleDialogs.find((candidate) =>
+      uploadedFilenamePattern.test(elementText(candidate)) ||
+      Boolean(findInteractiveByText(/thêm vào câu lệnh|add to prompt/i, candidate)) ||
+      Boolean(candidate.querySelector(FLOW_SELECTORS.fileInput))
+    ) || null;
+
+    if (!currentDialog) {
+      if (attachClickedAt && Date.now() - attachClickedAt > 500) {
+        const afterReferenceCount = countComposerReferences();
+        return {
+          attached: true,
+          referenceCount: afterReferenceCount,
+          verifiedBy: afterReferenceCount > beforeReferenceCount ? 'composer-reference' : 'dialog-closed',
+        };
+      }
+      await sleep(400);
+      continue;
     }
-    const addButtons = [...dialog.querySelectorAll('button')]
-      .filter((button) => isVisible(button) && /thêm vào câu lệnh|add to prompt/i.test(elementText(button)));
-    const newImage = [...dialog.querySelectorAll('img')]
+
+    const dialogText = elementText(currentDialog);
+    const addButtons = [...currentDialog.querySelectorAll('button, [role="button"]')]
+      .filter((button) => isVisible(button) && /thêm vào câu lệnh|add to prompt/i.test(elementText(button)) &&
+        !button.disabled && button.getAttribute('aria-disabled') !== 'true');
+    const newImage = [...currentDialog.querySelectorAll('img')]
       .find((image) => imageSource(image) && !beforeImageSources.has(imageSource(image)));
     let targetButton = null;
     if (newImage) {
       let mediaCard = newImage.parentElement;
-      for (let depth = 0; mediaCard && mediaCard !== dialog && depth < 8; depth++, mediaCard = mediaCard.parentElement) {
-        targetButton = [...mediaCard.querySelectorAll('button')]
-          .find((button) => isVisible(button) && /thêm vào câu lệnh|add to prompt/i.test(elementText(button)));
+      for (let depth = 0; mediaCard && mediaCard !== currentDialog && depth < 10; depth++, mediaCard = mediaCard.parentElement) {
+        targetButton = [...mediaCard.querySelectorAll('button, [role="button"]')]
+          .find((button) => isVisible(button) && /thêm vào câu lệnh|add to prompt/i.test(elementText(button)) &&
+            !button.disabled && button.getAttribute('aria-disabled') !== 'true');
         if (targetButton) break;
       }
     }
-    if (!targetButton && addButtons.length > beforeAddButtons.length) {
+    if (!targetButton && uploadedFilenamePattern.test(dialogText) && addButtons.length) {
       targetButton = addButtons.at(-1);
     }
-    if (targetButton) {
-      targetButton.click();
-      attachClicked = true;
-      break;
+    if (!targetButton && uploadedFilenamePattern.test(dialogText)) {
+      const globalAddButton = findInteractiveByText(/thêm vào câu lệnh|add to prompt/i);
+      if (globalAddButton && !globalAddButton.disabled && globalAddButton.getAttribute('aria-disabled') !== 'true') {
+        targetButton = globalAddButton;
+      }
+    }
+
+    if (targetButton && (!attachClickedAt || Date.now() - attachClickedAt > 1800) && attachClickAttempts < 3) {
+      interactionClick(targetButton);
+      attachClickedAt = Date.now();
+      attachClickAttempts += 1;
+      await sleep(700);
+      continue;
+    }
+
+    if (attachClickedAt && countComposerReferences() > beforeReferenceCount) {
+      return { attached: true, referenceCount: countComposerReferences(), verifiedBy: 'composer-reference' };
     }
     await sleep(500);
   }
-  if (!attachClicked) throw new Error('REFERENCE_UPLOAD_FAILED: Flow tải ảnh quá thời gian hoặc không nhận diện được ảnh vừa tải.');
+  if (!attachClickedAt) throw new Error('REFERENCE_UPLOAD_FAILED: Flow tải ảnh quá thời gian hoặc không nhận diện được ảnh vừa tải.');
 
   const verifyStartedAt = Date.now();
   while (Date.now() - verifyStartedAt < 12000) {
     await waitWhilePaused();
     const afterReferenceCount = countComposerReferences();
     if (afterReferenceCount > beforeReferenceCount) {
-      return { attached: true, referenceCount: afterReferenceCount };
+      return { attached: true, referenceCount: afterReferenceCount, verifiedBy: 'composer-reference' };
+    }
+    const stillOpen = [...document.querySelectorAll('[role="dialog"]')]
+      .some((candidate) => isVisible(candidate) && uploadedFilenamePattern.test(elementText(candidate)));
+    if (!stillOpen) {
+      return { attached: true, referenceCount: afterReferenceCount, verifiedBy: 'dialog-closed' };
     }
     await sleep(400);
   }
@@ -476,6 +568,12 @@ function findVisibleGenerationError() {
     .find((text) => text.length > 4 && text.length < 500 && /error|failed|try again|lỗi|không thể|credits|quota|policy/i.test(text));
 }
 
+function findPromptRequiredAlert() {
+  return [...document.querySelectorAll('[role="alert"], [aria-live], [class*="toast" i], [class*="snackbar" i]')]
+    .find((element) => isVisible(element) &&
+      /phải cung cấp câu lệnh|vui lòng.*câu lệnh|provide (?:a )?prompt|prompt (?:is )?required|enter (?:a )?prompt/i.test(elementText(element)));
+}
+
 async function waitForNewVideoResult(previousUrls, timeout = 900000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeout) {
@@ -489,20 +587,29 @@ async function waitForNewVideoResult(previousUrls, timeout = 900000) {
   throw new Error('Google Flow tạo video quá thời gian 15 phút.');
 }
 
-async function clickRenderButton() {
-  const composer = await waitForComposer();
-  const renderButton = findButtonBySymbol(composer.container, 'arrow_forward');
-  if (!renderButton) throw new Error('Không tìm thấy nút mũi tên Tạo video.');
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < 25000) {
-    await waitWhilePaused();
-    if (!renderButton.disabled && renderButton.getAttribute('aria-disabled') !== 'true') {
-      renderButton.click();
-      return;
+async function clickRenderButton(promptText) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 25000) {
+      await waitWhilePaused();
+      const composer = await waitForComposer();
+      const renderButton = findButtonBySymbol(composer.container, 'arrow_forward');
+      if (!renderButton) throw new Error('Không tìm thấy nút mũi tên Tạo video.');
+      if (!renderButton.disabled && renderButton.getAttribute('aria-disabled') !== 'true') {
+        interactionClick(renderButton);
+        await sleep(1200);
+        const promptAlert = findPromptRequiredAlert();
+        if (!promptAlert) return;
+
+        findInteractiveByText(/đóng|close/i, promptAlert)?.click();
+        setPrompt(promptText);
+        await sleep(700);
+        break;
+      }
+      await sleep(400);
     }
-    await sleep(400);
   }
-  throw new Error('Nút tạo video vẫn bị khóa. Ảnh tham chiếu chưa được gắn vào prompt hoặc cấu hình chưa hợp lệ.');
+  throw new Error('PROMPT_INPUT_FAILED: Flow vẫn coi câu lệnh là trống sau 3 lần nhập lại.');
 }
 
 function bytesToBase64(bytes) {
@@ -584,12 +691,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
       await ensureProjectReady();
       const baselineUrls = new Set(collectVideoResultLinks().map((item) => item.url));
-      const videoOptions = await configureVideo(message.options || {});
+      const videoOptions = await configureVideoOrKeepCurrent(message.options || {});
       setPrompt(message.prompt);
       await sleep(400);
       const reference = await attachReferenceImage(message.imageData);
       await sleep(700);
-      await clickRenderButton();
+      setPrompt(message.prompt);
+      await sleep(500);
+      await clickRenderButton(message.prompt);
       const result = await waitForNewVideoResult(baselineUrls);
       sendResponse({
         success: true,
@@ -605,9 +714,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           ? 'PROJECT_REQUIRED'
           : error.message.includes('FLOW_CONFIG_FAILED')
             ? 'FLOW_CONFIG_FAILED'
-            : error.message.includes('REFERENCE_UPLOAD_FAILED')
-              ? 'REFERENCE_UPLOAD_FAILED'
-              : undefined;
+            : error.message.includes('PROMPT_INPUT_FAILED')
+              ? 'PROMPT_INPUT_FAILED'
+              : error.message.includes('REFERENCE_UPLOAD_FAILED')
+                ? 'REFERENCE_UPLOAD_FAILED'
+                : undefined;
       sendResponse({
         success: false,
         code,

@@ -1780,6 +1780,11 @@ function LibraryContent() {
               {videoPipelineState?.requestedFlowOptions?.aspectRatio ?? videoFlowSettings.aspectRatio} ·{' '}
               {(videoPipelineState?.requestedFlowOptions?.referenceMode ?? videoFlowSettings.referenceMode) === 'ingredient' ? 'Thành phần' : 'Khung hình'} · x1
             </div>
+            {videoPipelineState?.configurationWarning && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-950/30 px-3 py-2 text-[10px] text-amber-200">
+                ⚠ Không đổi được thiết lập yêu cầu — video vẫn tiếp tục bằng cấu hình hiện tại trên Google Flow.
+              </div>
+            )}
             {videoPipelineState?.productDetailsStatus === 'done' && videoPipelineState?.productDetails && (
               <div className={`rounded-lg border px-3 py-2 text-[10px] ${
                 videoPipelineState.productDetails.warning

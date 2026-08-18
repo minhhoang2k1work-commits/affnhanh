@@ -12,7 +12,7 @@
   if (!isMarketplace) {
     const currentOrigin = window.location.origin;
     chrome.runtime.sendMessage({ action: 'SYNC_SERVER_URL', serverUrl: currentOrigin });
-    window.postMessage({ type: 'AFF_EXTENSION_INSTALLED', version: '1.5.0', status: 'ready' }, '*');
+    window.postMessage({ type: 'AFF_EXTENSION_INSTALLED', version: '1.5.3', status: 'ready' }, '*');
     document.documentElement.setAttribute('data-aff-extension-installed', 'true');
     console.log('[AFF HUB Extension] Auto-paired with web app origin:', currentOrigin);
 

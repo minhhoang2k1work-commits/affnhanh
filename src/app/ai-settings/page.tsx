@@ -17,6 +17,8 @@ import {
   Monitor,
   Workflow,
   Clapperboard,
+  SlidersHorizontal,
+  Save,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -31,6 +33,49 @@ interface ProviderState {
   isTesting: boolean;
   isLaunchingBrowser: boolean;
   apiConnected: boolean;
+}
+
+type VideoAutomationSettings = {
+  chatgptUrl: string;
+  flowUrl: string;
+  referenceMode: 'ingredient' | 'frame';
+  aspectRatio: '9:16' | '16:9';
+  duration: 4 | 6 | 8 | 10;
+  outputCount: 1;
+};
+
+const VIDEO_SETTINGS_STORAGE_KEY = 'aff_video_flow_settings';
+const DEFAULT_VIDEO_AUTOMATION_SETTINGS: VideoAutomationSettings = {
+  chatgptUrl: 'https://chatgpt.com/',
+  flowUrl: 'https://labs.google/fx/tools/flow',
+  referenceMode: 'ingredient',
+  aspectRatio: '9:16',
+  duration: 8,
+  outputCount: 1,
+};
+
+function normalizeVideoAutomationSettings(value: Partial<VideoAutomationSettings> = {}): VideoAutomationSettings {
+  const duration = Number(value.duration);
+  return {
+    chatgptUrl: String(value.chatgptUrl || DEFAULT_VIDEO_AUTOMATION_SETTINGS.chatgptUrl).trim(),
+    flowUrl: String(value.flowUrl || DEFAULT_VIDEO_AUTOMATION_SETTINGS.flowUrl).trim(),
+    referenceMode: value.referenceMode === 'frame' ? 'frame' : 'ingredient',
+    aspectRatio: value.aspectRatio === '16:9' ? '16:9' : '9:16',
+    duration: ([4, 6, 8, 10].includes(duration) ? duration : 8) as VideoAutomationSettings['duration'],
+    outputCount: 1,
+  };
+}
+
+function isAllowedAutomationUrl(value: string, service: 'chatgpt' | 'flow') {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:') return false;
+    if (service === 'chatgpt') return url.hostname === 'chatgpt.com' || url.hostname.endsWith('.chatgpt.com');
+    return url.hostname === 'flow.google' || url.hostname.endsWith('.flow.google') ||
+      url.hostname === 'labs.google' || url.hostname.endsWith('.labs.google');
+  } catch {
+    return false;
+  }
 }
 
 const INITIAL_PROVIDERS = {
@@ -55,6 +100,7 @@ export default function AISettingsPage() {
   const [providers, setProviders] = useState(INITIAL_PROVIDERS);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [videoAutomation, setVideoAutomation] = useState<VideoAutomationSettings>(DEFAULT_VIDEO_AUTOMATION_SETTINGS);
 
   const fetchStatuses = async () => {
     try {
@@ -96,7 +142,34 @@ export default function AISettingsPage() {
 
   useEffect(() => {
     fetchStatuses();
+    try {
+      const saved = JSON.parse(localStorage.getItem(VIDEO_SETTINGS_STORAGE_KEY) || 'null') || {};
+      setVideoAutomation(normalizeVideoAutomationSettings({
+        ...saved,
+        chatgptUrl: saved.chatgptUrl || localStorage.getItem('aff_chatgpt_url') || undefined,
+        flowUrl: saved.flowUrl || localStorage.getItem('aff_flow_url') || undefined,
+      }));
+    } catch {
+      setVideoAutomation(DEFAULT_VIDEO_AUTOMATION_SETTINGS);
+    }
   }, []);
+
+  const handleSaveVideoAutomation = () => {
+    const settings = normalizeVideoAutomationSettings(videoAutomation);
+    if (!isAllowedAutomationUrl(settings.chatgptUrl, 'chatgpt')) {
+      setNotice({ type: 'error', text: 'Link ChatGPT phải thuộc miền https://chatgpt.com.' });
+      return;
+    }
+    if (!isAllowedAutomationUrl(settings.flowUrl, 'flow')) {
+      setNotice({ type: 'error', text: 'Link Google Flow phải thuộc miền https://labs.google hoặc https://flow.google.' });
+      return;
+    }
+    localStorage.setItem(VIDEO_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    localStorage.setItem('aff_chatgpt_url', settings.chatgptUrl);
+    localStorage.setItem('aff_flow_url', settings.flowUrl);
+    setVideoAutomation(settings);
+    setNotice({ type: 'success', text: `Đã lưu Link ChatGPT và cấu hình Flow · ${settings.duration}s · ${settings.aspectRatio} · x1.` });
+  };
 
   const updateProvider = (id: keyof typeof INITIAL_PROVIDERS, updates: Partial<ProviderState>) => {
     setProviders(prev => ({ ...prev, [id]: { ...prev[id], ...updates } }));
@@ -290,6 +363,94 @@ export default function AISettingsPage() {
           {notice.text}
         </div>
       )}
+
+      <section id="video-automation" className="scroll-mt-6 rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-950/40 to-slate-950 overflow-hidden shadow-xl shadow-cyan-950/10">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-4 border-b border-cyan-500/20">
+          <div>
+            <div className="flex items-center gap-2 text-cyan-200 font-extrabold">
+              <SlidersHorizontal className="w-5 h-5" />
+              Link ChatGPT & Google Flow
+            </div>
+            <p className="mt-1 text-xs text-slate-400">Cấu hình được dùng khi bấm tạo video từ Thư viện sản phẩm.</p>
+          </div>
+          <span className="self-start sm:self-auto rounded-full bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1 text-[10px] font-bold text-cyan-300">VIDEO AUTOMATION</span>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <label className="block mb-1.5 text-xs font-bold text-white">Link ChatGPT hoặc GPT riêng</label>
+              <input
+                type="url"
+                value={videoAutomation.chatgptUrl}
+                onChange={(event) => setVideoAutomation((current) => ({ ...current, chatgptUrl: event.target.value }))}
+                placeholder="https://chatgpt.com/ hoặc https://chatgpt.com/g/..."
+                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-500"
+              />
+              <p className="mt-1 text-[11px] text-slate-500">Dán link cuộc trò chuyện hoặc link GPT dùng để phân tích ảnh và tạo prompt.</p>
+            </div>
+            <div>
+              <label className="block mb-1.5 text-xs font-bold text-white">Link dự án Google Flow</label>
+              <input
+                type="url"
+                value={videoAutomation.flowUrl}
+                onChange={(event) => setVideoAutomation((current) => ({ ...current, flowUrl: event.target.value }))}
+                placeholder="https://labs.google/fx/tools/flow/..."
+                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-500"
+              />
+              <p className="mt-1 text-[11px] text-slate-500">Nên dùng link dự án Flow bạn đang làm việc để extension mở đúng nơi.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <label className="text-xs font-bold text-slate-300">
+              <span className="block mb-1.5">Ảnh tham chiếu</span>
+              <select
+                value={videoAutomation.referenceMode}
+                onChange={(event) => setVideoAutomation((current) => ({ ...current, referenceMode: event.target.value === 'frame' ? 'frame' : 'ingredient' }))}
+                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-white outline-none focus:border-cyan-500"
+              >
+                <option value="ingredient">Thành phần</option>
+                <option value="frame">Khung hình</option>
+              </select>
+            </label>
+            <label className="text-xs font-bold text-slate-300">
+              <span className="block mb-1.5">Tỷ lệ</span>
+              <select
+                value={videoAutomation.aspectRatio}
+                onChange={(event) => setVideoAutomation((current) => ({ ...current, aspectRatio: event.target.value === '16:9' ? '16:9' : '9:16' }))}
+                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-white outline-none focus:border-cyan-500"
+              >
+                <option value="9:16">9:16 dọc</option>
+                <option value="16:9">16:9 ngang</option>
+              </select>
+            </label>
+            <label className="text-xs font-bold text-slate-300">
+              <span className="block mb-1.5">Thời lượng</span>
+              <select
+                value={videoAutomation.duration}
+                onChange={(event) => setVideoAutomation((current) => ({ ...current, duration: Number(event.target.value) as VideoAutomationSettings['duration'] }))}
+                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-white outline-none focus:border-cyan-500"
+              >
+                {[4, 6, 8, 10].map((seconds) => <option key={seconds} value={seconds}>{seconds} giây</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
+            <div className="text-xs text-cyan-300">
+              Video · {videoAutomation.duration}s · {videoAutomation.aspectRatio} · {videoAutomation.referenceMode === 'ingredient' ? 'Thành phần' : 'Khung hình'} · x1
+            </div>
+            <button
+              onClick={handleSaveVideoAutomation}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 px-5 py-2.5 text-sm font-extrabold text-white hover:bg-cyan-500"
+            >
+              <Save className="w-4 h-4" />
+              Lưu Link & cấu hình video
+            </button>
+          </div>
+        </div>
+      </section>
 
       {/* Banner */}
       <motion.div 

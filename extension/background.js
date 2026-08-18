@@ -23,7 +23,7 @@ async function ensurePaired() {
     const response = await fetch(`${serverUrl}/api/extension/pair`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceToken, extensionVersion: '1.5.0' }),
+      body: JSON.stringify({ deviceToken, extensionVersion: '1.5.3' }),
     });
     const data = await response.json();
     if (data.deviceToken) {
@@ -670,9 +670,14 @@ async function runVideoBrowserPipeline(payload, controller, options = {}) {
       artifacts.video1Url = artifacts.video1.videoUrl || null;
       lastVideoArtifacts = { ...artifacts };
       await updateVideoState({
-        video1Status: 'done', progress: 55, statusText: 'Video 1 đã hoàn thành trên Flow.',
+        video1Status: 'done',
+        progress: 55,
+        statusText: artifacts.video1.videoOptions?.configurationWarning
+          ? 'Video 1 đã hoàn thành bằng cấu hình hiện tại của Flow.'
+          : 'Video 1 đã hoàn thành trên Flow.',
         resultLinks: [artifacts.video1.resultPageUrl].filter(Boolean),
         appliedFlowOptions: artifacts.video1.videoOptions || requestedFlowOptions,
+        configurationWarning: artifacts.video1.videoOptions?.configurationWarning || null,
       });
     }
 
@@ -684,8 +689,13 @@ async function runVideoBrowserPipeline(payload, controller, options = {}) {
       artifacts.video2Url = artifacts.video2.videoUrl || null;
       lastVideoArtifacts = { ...artifacts };
       await updateVideoState({
-        video2Status: 'done', progress: 80, statusText: 'Video 2 đã hoàn thành trên Flow.',
+        video2Status: 'done',
+        progress: 80,
+        statusText: artifacts.video2.videoOptions?.configurationWarning
+          ? 'Video 2 đã hoàn thành bằng cấu hình hiện tại của Flow.'
+          : 'Video 2 đã hoàn thành trên Flow.',
         resultLinks: [artifacts.video1?.resultPageUrl, artifacts.video2?.resultPageUrl].filter(Boolean),
+        configurationWarning: artifacts.video2.videoOptions?.configurationWarning || artifacts.video1?.videoOptions?.configurationWarning || null,
       });
     }
 

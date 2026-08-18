@@ -12,11 +12,11 @@
   if (!isMarketplace) {
     const currentOrigin = window.location.origin;
     chrome.runtime.sendMessage({ action: 'SYNC_SERVER_URL', serverUrl: currentOrigin });
-    window.postMessage({ type: 'AFF_EXTENSION_INSTALLED', version: '1.1.0', status: 'ready' }, '*');
+    window.postMessage({ type: 'AFF_EXTENSION_INSTALLED', version: '1.3.0', status: 'ready' }, '*');
     document.documentElement.setAttribute('data-aff-extension-installed', 'true');
     console.log('[AFF HUB Extension] Auto-paired with web app origin:', currentOrigin);
 
-    // Listen for video creation requests from the web app
+    // Listen for video creation and commission lookup requests from the web app
     window.addEventListener('message', (event) => {
       if (event.source !== window) return;
 
@@ -29,6 +29,7 @@
             imageData: event.data.imageUrl,
             chatgptUrl: event.data.chatgptUrl,
             flowUrl: event.data.flowUrl,
+            flowOptions: event.data.flowOptions,
             productId: event.data.productId,
             productName: event.data.productName,
           }
@@ -50,14 +51,59 @@
           }, '*');
         });
       }
+
+      if (event.data?.type === 'AFF_VIDEO_CONTROL') {
+        const actions = {
+          pause: 'VIDEO_BROWSER_PAUSE',
+          resume: 'VIDEO_BROWSER_RESUME',
+          cancel: 'VIDEO_BROWSER_CANCEL',
+          retry: 'VIDEO_BROWSER_RETRY',
+          reset: 'VIDEO_BROWSER_RESET',
+        };
+        const action = actions[event.data.command];
+        if (!action) return;
+        chrome.runtime.sendMessage({ action }, (response) => {
+          window.postMessage({
+            type: 'AFF_VIDEO_CONTROL_RESULT',
+            command: event.data.command,
+            ok: response?.ok ?? response?.started ?? false,
+            error: response?.error || null,
+          }, '*');
+        });
+      }
+
+      // Web app requests commission lookup for a product via Extension
+      if (event.data?.type === 'AFF_COMMISSION_LOOKUP') {
+        console.log('[AFF HUB Extension] Commission lookup request:', event.data);
+        chrome.runtime.sendMessage({
+          action: 'COMMISSION_LOOKUP_START',
+          payload: {
+            productUrl: event.data.productUrl,
+            itemId: event.data.itemId,
+            lookupId: event.data.lookupId || 'lookup_' + Date.now(),
+          }
+        }, (res) => {
+          window.postMessage({
+            type: 'AFF_COMMISSION_STARTED',
+            started: res?.started || false,
+            error: res?.error || null,
+          }, '*');
+        });
+      }
     });
 
-    // Forward pipeline state changes back to web app in real-time
+    // Forward pipeline state changes and commission results back to web app in real-time
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes.videoPipelineState) {
         window.postMessage({
           type: 'AFF_VIDEO_STATE',
           state: changes.videoPipelineState.newValue,
+        }, '*');
+      }
+      if (area === 'local' && changes.commissionLookupResult) {
+        window.postMessage({
+          type: 'AFF_COMMISSION_RESULT',
+          result: changes.commissionLookupResult.newValue,
         }, '*');
       }
     });
@@ -199,6 +245,9 @@
       sendResponse({ started: true });
     } else if (message.action === 'GENERATE_LINK') {
       handleAffiliateLinkGeneration(message.jobId, message.payload);
+      sendResponse({ processing: true });
+    } else if (message.action === 'COMMISSION_LOOKUP') {
+      handleCommissionLookup(message.lookupId, message.payload);
       sendResponse({ processing: true });
     }
   });
@@ -776,6 +825,344 @@
         action: 'AFFILIATE_RESULT',
         jobId,
         error: err.message === 'NAVIGATING_TO_CUSTOM_LINK' ? 'NAVIGATING' : err.message,
+      });
+    }
+  }
+
+  // ============ COMMISSION LOOKUP VIA AFFILIATE.SHOPEE.VN ============
+
+  // Layer 1: Try GraphQL/REST API for commission data
+  async function commissionViaAPI(itemId, shopId) {
+    console.log('[AFF HUB] Commission lookup via API for item:', itemId);
+
+    const endpoints = [
+      {
+        url: 'https://affiliate.shopee.vn/api/v3/gql?q=getOfferByProduct',
+        method: 'POST',
+        body: { item_id: parseInt(itemId), shop_id: shopId ? parseInt(shopId) : undefined },
+      },
+      {
+        url: 'https://affiliate.shopee.vn/api/v3/gql?q=productOfferInfo',
+        method: 'POST',
+        body: { item_id: parseInt(itemId) },
+      },
+      {
+        url: `https://affiliate.shopee.vn/api/v3/offer/product/detail?item_id=${itemId}`,
+        method: 'GET',
+      },
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        const options = {
+          method: endpoint.method || 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        };
+        if (options.method === 'POST' && endpoint.body) {
+          options.body = JSON.stringify(endpoint.body);
+        }
+
+        const response = await fetch(endpoint.url, options);
+        if (!response.ok) continue;
+
+        const data = await response.json();
+        const jsonStr = JSON.stringify(data);
+
+        const result = parseCommissionFromJSON(data, jsonStr);
+        if (result && result.commissionRate > 0) {
+          console.log('[AFF HUB] Commission found via API:', result);
+          return { success: true, source: 'graphql', data: result };
+        }
+      } catch (e) {
+        console.log('[AFF HUB] API endpoint failed:', endpoint.url, e.message);
+      }
+    }
+
+    throw new Error('All commission API endpoints failed or returned no data');
+  }
+
+  function parseCommissionFromJSON(data, jsonStr) {
+    const result = {
+      commissionRate: 0,
+      shopeeRate: 0,
+      sellerRate: 0,
+      maxCommission: null,
+      capStatus: '',
+      affiliateProgram: '',
+      campaignValidity: '',
+      allowAds: null,
+      productName: '',
+      productImage: '',
+    };
+
+    // Try structured access on common response shapes
+    const tryPaths = [data, data?.data, data?.data?.result, data?.result, data?.data?.data];
+    for (const obj of tryPaths) {
+      if (!obj || typeof obj !== 'object') continue;
+      // Handle arrays (search results)
+      const target = Array.isArray(obj) ? obj[0] : obj;
+      if (!target) continue;
+
+      if (target.commission_rate != null) result.commissionRate = parseFloat(target.commission_rate) || 0;
+      if (target.commissionRate != null) result.commissionRate = parseFloat(target.commissionRate) || 0;
+      if (target.seller_commission_rate != null) result.sellerRate = parseFloat(target.seller_commission_rate) || 0;
+      if (target.extra_commission_rate != null) result.sellerRate = parseFloat(target.extra_commission_rate) || 0;
+      if (target.shopee_commission_rate != null) result.shopeeRate = parseFloat(target.shopee_commission_rate) || 0;
+      if (target.base_commission_rate != null) result.shopeeRate = parseFloat(target.base_commission_rate) || 0;
+      if (target.max_commission != null) result.maxCommission = parseFloat(target.max_commission);
+      if (target.campaign_name) result.affiliateProgram = target.campaign_name;
+      if (target.product_name || target.productName) result.productName = target.product_name || target.productName;
+      if (target.image || target.product_image) result.productImage = target.image || target.product_image;
+    }
+
+    // Fallback: regex patterns on raw JSON string
+    if (!result.commissionRate) {
+      const rateMatch = jsonStr.match(/"(?:commission_rate|commissionRate)"[:\s]*"?(\d+\.?\d*)"?/i);
+      if (rateMatch) result.commissionRate = parseFloat(rateMatch[1]);
+    }
+
+    // Ensure total = shopee + seller if both are present
+    if (!result.commissionRate && (result.shopeeRate + result.sellerRate) > 0) {
+      result.commissionRate = result.shopeeRate + result.sellerRate;
+    }
+
+    return result;
+  }
+
+  // Layer 2: DOM Automation on "Hoa hồng Sản phẩm" page
+  async function commissionViaDom(productUrl, itemId) {
+    console.log('[AFF HUB] Commission lookup via DOM for:', productUrl || itemId);
+
+    // Navigate to product offer page if not already there
+    const offerPaths = ['product_offer', 'product-offer', 'offer/product'];
+    const isOnOfferPage = offerPaths.some(p => window.location.href.includes(p));
+
+    if (!isOnOfferPage) {
+      window.location.href = 'https://affiliate.shopee.vn/offer/product_offer';
+      throw new Error('NAVIGATING_TO_PRODUCT_OFFER');
+    }
+
+    await new Promise(r => setTimeout(r, 1500));
+
+    // Find search input
+    const searchInput = document.querySelector(
+      'input[placeholder*="link"], input[placeholder*="Link"], input[placeholder*="URL"], ' +
+      'input[placeholder*="sản phẩm"], input[placeholder*="tìm"], input[placeholder*="search"], ' +
+      'textarea, input[type="text"], input[type="search"]'
+    );
+
+    if (!searchInput) throw new Error('Không tìm thấy ô tìm kiếm trên trang Hoa hồng Sản phẩm');
+
+    // Enter product URL or ID
+    const searchTerm = productUrl || `https://shopee.vn/product/0/${itemId}`;
+    searchInput.value = '';
+    searchInput.focus();
+
+    // Simulate realistic typing via native setter for React compatibility
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype, 'value'
+    )?.set || Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype, 'value'
+    )?.set;
+
+    if (nativeInputValueSetter) {
+      nativeInputValueSetter.call(searchInput, searchTerm);
+    } else {
+      searchInput.value = searchTerm;
+    }
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+    await new Promise(r => setTimeout(r, 500));
+
+    // Find and click search button
+    const buttons = document.querySelectorAll('button, [role="button"]');
+    let searchClicked = false;
+    for (const btn of buttons) {
+      const text = (btn.innerText || btn.getAttribute('aria-label') || '').toLowerCase();
+      if (text.includes('tìm') || text.includes('search') || text.includes('tra cứu') || text.includes('kiểm tra') || text.includes('apply')) {
+        btn.click();
+        searchClicked = true;
+        break;
+      }
+    }
+
+    // Also try pressing Enter as fallback
+    if (!searchClicked) {
+      searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+      searchInput.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', keyCode: 13, bubbles: true }));
+      searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, bubbles: true }));
+    }
+
+    // Wait for results to load
+    await new Promise(r => setTimeout(r, 3000));
+
+    // Scrape commission data from the results page
+    return scrapeCommissionFromPage();
+  }
+
+  function scrapeCommissionFromPage() {
+    const pageText = document.body.innerText || '';
+    const result = {
+      commissionRate: 0,
+      shopeeRate: 0,
+      sellerRate: 0,
+      maxCommission: null,
+      capStatus: '',
+      affiliateProgram: '',
+      campaignValidity: '',
+      allowAds: null,
+      productName: '',
+      productImage: '',
+    };
+
+    // Commission rate patterns
+    const totalMatch = pageText.match(/(?:Tổng hoa hồng|Total Commission|Hoa hồng)[:\s]*(\d+[.,]?\d*)\s*%/i);
+    if (totalMatch) result.commissionRate = parseFloat(totalMatch[1].replace(',', '.'));
+
+    const shopeeRateMatch = pageText.match(/(?:Hoa hồng Shopee|Shopee Commission|HH Shopee|Hoa hồng sàn)[:\s]*(\d+[.,]?\d*)\s*%/i);
+    if (shopeeRateMatch) result.shopeeRate = parseFloat(shopeeRateMatch[1].replace(',', '.'));
+
+    const sellerRateMatch = pageText.match(/(?:Hoa hồng Seller|Seller Commission|Extra|HH Seller|Hoa hồng shop)[:\s]*(\d+[.,]?\d*)\s*%/i);
+    if (sellerRateMatch) result.sellerRate = parseFloat(sellerRateMatch[1].replace(',', '.'));
+
+    // If only partial found, try to derive total
+    if (!result.commissionRate && (result.shopeeRate + result.sellerRate) > 0) {
+      result.commissionRate = result.shopeeRate + result.sellerRate;
+    }
+
+    // Fallback: any percentage that looks like commission from table/card elements
+    if (!result.commissionRate) {
+      const rows = document.querySelectorAll('tr, [class*="row"], [class*="item"], [class*="card"], [class*="offer"]');
+      for (const row of rows) {
+        const text = row.innerText || '';
+        const rateMatch = text.match(/(\d+[.,]?\d*)\s*%/);
+        if (rateMatch) {
+          const val = parseFloat(rateMatch[1].replace(',', '.'));
+          if (val > 0 && val <= 90) {
+            result.commissionRate = val;
+            break;
+          }
+        }
+      }
+    }
+
+    // Max commission / Cap
+    const capMatch = pageText.match(/(?:Cap|Giới hạn|Max|Tối đa|Hoa hồng tối đa)[:\s]*([\d.,]+)\s*(?:₫|đ|VND|k)/i);
+    if (capMatch) {
+      let capVal = parseFloat(capMatch[1].replace(/[.,]/g, ''));
+      if (pageText.match(/(?:Cap|Giới hạn|Max|Tối đa)[:\s]*[\d.,]+\s*k/i)) capVal *= 1000;
+      result.maxCommission = capVal;
+    }
+
+    const capStatusMatch = pageText.match(/(?:Trạng thái cap|Cap status)[:\s]*([^\n]{3,50})/i);
+    if (capStatusMatch) result.capStatus = capStatusMatch[1].trim();
+
+    // Program name
+    const progMatch = pageText.match(/(?:Chương trình|Campaign|Program)[:\s]*([^\n]{3,80})/i);
+    if (progMatch) result.affiliateProgram = progMatch[1].trim();
+
+    // Campaign validity
+    const validMatch = pageText.match(/(?:Hiệu lực|Thời gian|Valid|Hạn)[:\s]*([\d\/\-\.]+\s*[-~đến]+\s*[\d\/\-\.]+)/i);
+    if (validMatch) result.campaignValidity = validMatch[1].trim();
+
+    // Product info from page
+    const nameEl = document.querySelector('[class*="product-name"], [class*="product_name"], [class*="productName"], h3, h4');
+    if (nameEl) result.productName = nameEl.innerText?.trim() || '';
+
+    const imgEl = document.querySelector('[class*="product"] img, [class*="offer"] img');
+    if (imgEl) result.productImage = imgEl.src || '';
+
+    return result;
+  }
+
+  // Main commission lookup handler
+  async function handleCommissionLookup(lookupId, payload) {
+    console.log('[AFF HUB] Commission lookup started:', lookupId, payload);
+    const { productUrl, itemId } = payload || {};
+
+    if (!productUrl && !itemId) {
+      return chrome.runtime.sendMessage({
+        action: 'COMMISSION_LOOKUP_RESULT',
+        lookupId,
+        result: { success: false, error: 'Không có URL hoặc Item ID để tra cứu' },
+      });
+    }
+
+    // Check auth state
+    const currentUrl = window.location.href;
+    const pageContent = document.body.innerText.toLowerCase();
+
+    if (currentUrl.includes('/login')) {
+      return chrome.runtime.sendMessage({
+        action: 'COMMISSION_LOOKUP_RESULT',
+        lookupId,
+        result: { success: false, error: 'SHOPEE_AUTH_REQUIRED' },
+      });
+    }
+
+    if (currentUrl.includes('/verify') || pageContent.includes('captcha')) {
+      return chrome.runtime.sendMessage({
+        action: 'COMMISSION_LOOKUP_RESULT',
+        lookupId,
+        result: { success: false, error: 'SHOPEE_VERIFICATION_REQUIRED' },
+      });
+    }
+
+    // Extract item ID from URL if needed
+    let resolvedItemId = itemId || '';
+    if (!resolvedItemId && productUrl) {
+      const match = productUrl.match(/(?:product\/\d+\/|[-/]i\.)(\d+)/);
+      if (match) resolvedItemId = match[1];
+    }
+
+    // Timeout (20 seconds for commission lookup)
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('BROWSER_TIMEOUT')), 20000);
+    });
+
+    try {
+      const lookupTask = async () => {
+        // Layer 1: Try API first (fast)
+        try {
+          const apiResult = await commissionViaAPI(resolvedItemId, '');
+          if (apiResult.success && apiResult.data.commissionRate > 0) {
+            return apiResult;
+          }
+        } catch (e) {
+          console.log('[AFF HUB] API commission lookup failed, trying DOM:', e.message);
+        }
+
+        // Layer 2: DOM automation fallback (reliable)
+        const domResult = await commissionViaDom(productUrl, resolvedItemId);
+        return {
+          success: domResult.commissionRate > 0,
+          source: 'dom_scrape',
+          data: domResult,
+        };
+      };
+
+      const result = await Promise.race([lookupTask(), timeoutPromise]);
+
+      chrome.runtime.sendMessage({
+        action: 'COMMISSION_LOOKUP_RESULT',
+        lookupId,
+        result: {
+          success: true,
+          source: result.source,
+          data: result.data,
+          itemId: resolvedItemId,
+        },
+      });
+    } catch (err) {
+      console.error('[AFF HUB] Commission lookup failed:', err);
+      chrome.runtime.sendMessage({
+        action: 'COMMISSION_LOOKUP_RESULT',
+        lookupId,
+        result: {
+          success: false,
+          error: err.message === 'NAVIGATING_TO_PRODUCT_OFFER' ? 'NAVIGATING' : err.message,
+        },
       });
     }
   }

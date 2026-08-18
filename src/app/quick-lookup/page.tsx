@@ -96,6 +96,161 @@ export default function QuickLookupPage() {
   const [showCookieModal, setShowCookieModal] = useState(false);
   const [customCookie, setCustomCookie] = useState('');
 
+  // Extension commission lookup
+  const [extensionAvailable, setExtensionAvailable] = useState(false);
+  const [extensionLoading, setExtensionLoading] = useState(false);
+  const [extensionSource, setExtensionSource] = useState<string | null>(null);
+
+  // Detect extension and listen for commission results
+  React.useEffect(() => {
+    const checkExtension = () => {
+      const installed = document.documentElement.getAttribute('data-aff-extension-installed') === 'true';
+      setExtensionAvailable(installed);
+    };
+    checkExtension();
+    const timer = setTimeout(checkExtension, 2000);
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.source !== window) return;
+
+      if (event.data?.type === 'AFF_EXTENSION_INSTALLED') {
+        setExtensionAvailable(true);
+      }
+
+      if (event.data?.type === 'AFF_COMMISSION_STARTED') {
+        if (!event.data.started) {
+          setExtensionLoading(false);
+          setError(event.data.error || 'Extension không thể bắt đầu tra cứu.');
+        }
+      }
+
+      if (event.data?.type === 'AFF_COMMISSION_RESULT') {
+        const commResult = event.data.result;
+        setExtensionLoading(false);
+        if (!commResult || commResult.status === 'loading') return;
+
+        if (commResult.status === 'error' || !commResult.success) {
+          let errMsg = commResult.error || 'Không lấy được dữ liệu hoa hồng từ Extension.';
+          if (errMsg === 'SHOPEE_AUTH_REQUIRED') {
+            errMsg = 'Cần đăng nhập Shopee Affiliate trước. Hãy mở affiliate.shopee.vn và đăng nhập.';
+          } else if (errMsg === 'SHOPEE_VERIFICATION_REQUIRED') {
+            errMsg = 'Shopee yêu cầu xác minh (captcha). Hãy mở affiliate.shopee.vn và xử lý.';
+          } else if (errMsg === 'NAVIGATING') {
+            setExtensionLoading(true);
+            return;
+          }
+          setError(errMsg);
+          return;
+        }
+
+        const commData = commResult.data;
+        setExtensionSource(commResult.source === 'graphql' ? 'Shopee Affiliate API' : 'Shopee Affiliate (Extension)');
+
+        setResult((prev) => {
+          if (!prev) {
+            return {
+              name: commData.productName || 'Sản phẩm Shopee',
+              image: commData.productImage || '',
+              shopName: '',
+              isShopXtra: commData.sellerRate > 0,
+              isMall: false,
+              price: 0,
+              priceFormatted: '—',
+              sold: '—',
+              soldCount: 0,
+              rating: 0,
+              itemId: commResult.itemId || '',
+              shopId: '',
+              shopeeUrl: '',
+              generatedAffiliateUrl: '',
+              commission: {
+                totalRate: commData.commissionRate,
+                totalAmountFormatted: '—',
+                totalAmount: 0,
+                sellerRate: commData.sellerRate,
+                sellerAmountFormatted: '—',
+                sellerAmount: 0,
+                shopeeRate: commData.shopeeRate,
+                shopeeAmountFormatted: '—',
+                shopeeAmount: 0,
+                capAmountFormatted: commData.maxCommission != null ? `${commData.maxCommission.toLocaleString('vi-VN')}đ` : 'Chưa rõ',
+                capAmount: commData.maxCommission || 0,
+                capStatus: commData.capStatus || 'Chưa rõ',
+                note: `Dữ liệu từ Extension (${commResult.source}). Chương trình: ${commData.affiliateProgram || 'N/A'}`,
+                isUnlocked: true,
+                hasData: commData.commissionRate > 0,
+                source: 'official_api' as const,
+                capKnown: commData.maxCommission != null,
+                status: commData.commissionRate > 0 ? 'available' as const : 'unknown' as const,
+              },
+              priceHistory: { currentPrice: '—', maxPrice: '—', avgPrice: '—', change7d: '—', change30d: '—' },
+              fetchedAt: new Date().toISOString(),
+            };
+          }
+
+          const price = prev.price;
+          const totalRate = commData.commissionRate;
+          const sellerRate = commData.sellerRate;
+          const shopeeRate = commData.shopeeRate || Math.max(0, totalRate - sellerRate);
+          const totalAmount = Math.round((price * totalRate) / 100);
+          const sellerAmount = Math.round((price * sellerRate) / 100);
+          const shopeeAmount = Math.round((price * shopeeRate) / 100);
+          const fmt = (v: number) => `${new Intl.NumberFormat('vi-VN').format(v)}đ`;
+
+          return {
+            ...prev,
+            commission: {
+              ...prev.commission,
+              totalRate,
+              totalAmount,
+              totalAmountFormatted: totalRate > 0 ? fmt(totalAmount) : '—',
+              sellerRate,
+              sellerAmount,
+              sellerAmountFormatted: totalRate > 0 ? fmt(sellerAmount) : '—',
+              shopeeRate,
+              shopeeAmount,
+              shopeeAmountFormatted: totalRate > 0 ? fmt(shopeeAmount) : '—',
+              capAmountFormatted: commData.maxCommission != null ? fmt(commData.maxCommission) : prev.commission.capAmountFormatted,
+              capAmount: commData.maxCommission ?? prev.commission.capAmount,
+              capStatus: commData.capStatus || prev.commission.capStatus,
+              note: `✅ Dữ liệu xác nhận từ Extension (${commResult.source})`,
+              hasData: totalRate > 0,
+              source: 'official_api' as const,
+              capKnown: commData.maxCommission != null || prev.commission.capKnown,
+              status: totalRate > 0 ? 'available' as const : prev.commission.status,
+            },
+          };
+        });
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('message', handleMessage);
+    };
+  }, []);
+
+  const handleExtensionLookup = () => {
+    const q = inputUrl.trim();
+    if (!q) return;
+    setExtensionLoading(true);
+    setError(null);
+    setExtensionSource(null);
+    window.postMessage({
+      type: 'AFF_COMMISSION_LOOKUP',
+      productUrl: q,
+      itemId: /^\d{6,20}$/.test(q) ? q : undefined,
+      lookupId: 'lookup_' + Date.now(),
+    }, '*');
+    setTimeout(() => {
+      setExtensionLoading((prev) => {
+        if (prev) setError('Extension không phản hồi. Kiểm tra Extension đã cài và đăng nhập affiliate.shopee.vn.');
+        return false;
+      });
+    }, 25000);
+  };
+
   const handleSearch = async (queryToSearch?: string) => {
     const q = queryToSearch || inputUrl;
     if (!q.trim()) return;
@@ -261,6 +416,22 @@ export default function QuickLookupPage() {
               </>
             )}
           </button>
+
+          {extensionAvailable && (
+            <button
+              type="button"
+              onClick={handleExtensionLookup}
+              disabled={extensionLoading || !inputUrl.trim()}
+              className="px-5 py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all whitespace-nowrap"
+            >
+              {extensionLoading ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <ShieldCheck className="w-4 h-4" />
+              )}
+              {extensionLoading ? 'Đang tra...' : 'Tra qua Extension'}
+            </button>
+          )}
         </form>
 
         {/* Quick Sample Links */}
@@ -413,6 +584,12 @@ export default function QuickLookupPage() {
             <h3 className="text-base font-bold text-white flex items-center gap-2 mb-3">
               <Coins className="w-4 h-4 text-amber-400" />
               Chi Tiết Phân Tách Hoa Hồng (Commission Breakdown)
+              {extensionSource && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold">
+                  <ShieldCheck className="w-3 h-3" />
+                  {extensionSource}
+                </span>
+              )}
             </h3>
 
             {result.commission.source === 'metadata' && (
@@ -424,7 +601,9 @@ export default function QuickLookupPage() {
             {result.commission.source === 'official_api' && (
               <div className="mb-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-xs text-emerald-200 flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 shrink-0" />
-                Hoa hồng đã được đối chiếu trực tiếp từ Shopee Affiliate Open API.
+                {extensionSource
+                  ? `Hoa hồng đã được xác nhận trực tiếp từ ${extensionSource}.`
+                  : 'Hoa hồng đã được đối chiếu trực tiếp từ Shopee Affiliate Open API.'}
               </div>
             )}
             {result.commission.status === 'not_affiliate' && (

@@ -188,7 +188,7 @@ model ExtensionJob {
   id           String    @id @default(uuid())
   userId       String
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type         String    // "SCAN_SHOP", "GENERATE_AFFILIATE_LINK"
+  type         String    // "SCAN_SHOP", "GENERATE_AFFILIATE_LINK", "GENERATE_VIDEO"
   targetUrl    String?
   scanJobId    String?
   productId    String?

@@ -1,388 +1,745 @@
 // AFF HUB Chrome Extension - Background Service Worker
 
 const DEFAULT_SERVER = 'http://localhost:3000';
-let activeScanJob = null;
+const DEFAULT_CHATGPT_URL = 'https://chatgpt.com/';
+const DEFAULT_FLOW_URL = 'https://labs.google/fx/tools/flow';
 
-// Get stored config or defaults
+let activeScanJob = null;
+let lastVideoPayload = null;
+let lastVideoArtifacts = {};
+let videoController = null;
+
 async function getConfig() {
   const data = await chrome.storage.local.get(['serverUrl', 'deviceToken', 'userSetServer']);
-  const serverUrl = data.userSetServer ? (data.serverUrl || DEFAULT_SERVER) : DEFAULT_SERVER;
   return {
-    serverUrl,
+    serverUrl: data.userSetServer ? (data.serverUrl || DEFAULT_SERVER) : DEFAULT_SERVER,
     deviceToken: data.deviceToken || null,
   };
 }
 
-// Register / Pair extension
 async function ensurePaired() {
   const { serverUrl, deviceToken } = await getConfig();
   try {
-    const res = await fetch(`${serverUrl}/api/extension/pair`, {
+    const response = await fetch(`${serverUrl}/api/extension/pair`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceToken, extensionVersion: '1.0.0' }),
+      body: JSON.stringify({ deviceToken, extensionVersion: '1.3.0' }),
     });
-    const data = await res.json();
+    const data = await response.json();
     if (data.deviceToken) {
       await chrome.storage.local.set({ deviceToken: data.deviceToken });
       return data.deviceToken;
     }
-  } catch (err) {
-    console.error('[AFF HUB Ext] Pair failed:', err.message);
+  } catch (error) {
+    console.warn('[AFF HUB Ext] Pair failed:', error.message);
   }
   return deviceToken;
 }
 
-// Heartbeat Loop (every 15s)
 async function sendHeartbeat() {
   const { serverUrl, deviceToken } = await getConfig();
-  if (!deviceToken) {
-    await ensurePaired();
-    return;
-  }
+  if (!deviceToken) return ensurePaired();
   try {
     await fetch(`${serverUrl}/api/extension/heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deviceToken }),
     });
-  } catch (err) {
-    console.warn('[AFF HUB Ext] Heartbeat error:', err.message);
+  } catch (error) {
+    console.warn('[AFF HUB Ext] Heartbeat error:', error.message);
   }
 }
 
-// Poll Next Job (every 3s)
 async function pollNextJob() {
+  if (activeScanJob || isVideoPipelineBusy()) return;
   const { serverUrl } = await getConfig();
   try {
-    const res = await fetch(`${serverUrl}/api/extension/jobs/next`);
-    const data = await res.json();
-
-    if (data.hasJob && data.job) {
-      const job = data.job;
-      console.log('[AFF HUB Ext] Received Job:', job);
-
-      if (job.type === 'SCAN_SHOP' && job.targetUrl) {
-        activeScanJob = job;
-        await startShopScanJob(job);
-      } else if (job.type === 'GENERATE_AFFILIATE_LINK') {
-        await startAffiliateLinkJob(job);
-      }
+    const response = await fetch(`${serverUrl}/api/extension/jobs/next`);
+    const data = await response.json();
+    if (!data.hasJob || !data.job) return;
+    const job = data.job;
+    console.log('[AFF HUB Ext] Received job:', job.type, job.id);
+    if (job.type === 'SCAN_SHOP' && job.targetUrl) {
+      activeScanJob = job;
+      await startShopScanJob(job);
+    } else if (job.type === 'GENERATE_AFFILIATE_LINK') {
+      await startAffiliateLinkJob(job);
+    } else if (job.type === 'GENERATE_VIDEO' || job.type === 'CREATE_VIDEO') {
+      await startVideoBrowserPipeline({ ...(job.payload || {}), extensionJobId: job.id });
+    } else if (job.type === 'COMMISSION_LOOKUP') {
+      await startCommissionLookupJob(job);
     }
-  } catch (err) {
-    // Silent background poll retry
+  } catch {
+    // The next polling cycle will retry.
   }
 }
 
-// Launch Tab & Start Shop Scanning
 async function startShopScanJob(job) {
   let targetUrl = job.targetUrl;
-  if (!targetUrl.startsWith('http')) {
-    targetUrl = `https://${targetUrl}`;
-  }
-
-  // Check if tab already exists
+  if (!targetUrl.startsWith('http')) targetUrl = `https://${targetUrl}`;
   const isTiktok = targetUrl.includes('tiktok.com');
   const queryPattern = isTiktok ? '*://*.tiktok.com/*' : '*://shopee.vn/*';
   const tabs = await chrome.tabs.query({ url: queryPattern });
-  let matchedTab = tabs.find((t) => t.url && t.url.includes(new URL(targetUrl).pathname));
-
-  if (!matchedTab) {
-    matchedTab = await chrome.tabs.create({ url: targetUrl, active: true });
-  } else {
-    await chrome.tabs.update(matchedTab.id, { active: true });
-  }
-
-  // Notify content script to start scanning
-  setTimeout(() => {
-    chrome.tabs.sendMessage(matchedTab.id, {
-      action: 'START_SCAN',
-      scanJobId: job.scanJobId || job.id,
-      scanToken: job.scanToken,
-    }).catch((err) => {
-      console.warn('[AFF HUB Ext] Content script ready wait:', err.message);
-    });
-  }, 2000);
+  let tab = tabs.find((item) => item.url && item.url.includes(new URL(targetUrl).pathname));
+  tab = tab
+    ? await chrome.tabs.update(tab.id, { active: true })
+    : await chrome.tabs.create({ url: targetUrl, active: true });
+  await waitForTabComplete(tab.id, 30000).catch(() => {});
+  await sendTabMessageWithRetry(tab.id, {
+    action: 'START_SCAN',
+    scanJobId: job.scanJobId || job.id,
+    scanToken: job.scanToken,
+  }, 4).catch((error) => console.warn('[AFF HUB Ext] Start scan failed:', error.message));
 }
 
-// Handle Affiliate Link Job
 async function startAffiliateLinkJob(job) {
-  const affUrl = 'https://affiliate.shopee.vn/offer/custom_link';
+  const affiliateUrl = 'https://affiliate.shopee.vn/offer/custom_link';
   const tabs = await chrome.tabs.query({ url: '*://affiliate.shopee.vn/*' });
-
-  let tab = tabs[0];
-  if (!tab) {
-    tab = await chrome.tabs.create({ url: affUrl, active: true });
-  }
-
-  const message = {
+  const tab = tabs[0] || await chrome.tabs.create({ url: affiliateUrl, active: true });
+  await waitForTabComplete(tab.id, 30000).catch(() => {});
+  await sendTabMessageWithRetry(tab.id, {
     action: 'GENERATE_LINK',
     jobId: job.id,
     payload: {
       productUrl: job.payload?.productUrl,
       productUrls: job.payload?.productUrls,
       subIds: job.payload?.subIds || [],
-    }
-  };
-
-  const sendMessageWithRetry = async (tabId, msg, retries = 3) => {
-    for (let i = 0; i < retries; i++) {
-      try {
-        await chrome.tabs.sendMessage(tabId, msg);
-        console.log('[AFF HUB Ext] Message sent to content script successfully');
-        return;
-      } catch (err) {
-        if (i === retries - 1) throw err;
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    }
-  };
-
-  // Wait for tab to be ready if not complete
-  if (tab.status !== 'complete') {
-    await new Promise((resolve) => {
-      let timeoutId;
-      const listener = (tabId, info) => {
-        if (tabId === tab.id && info.status === 'complete') {
-          chrome.tabs.onUpdated.removeListener(listener);
-          clearTimeout(timeoutId);
-          resolve();
-        }
-      };
-      chrome.tabs.onUpdated.addListener(listener);
-      timeoutId = setTimeout(() => {
-        chrome.tabs.onUpdated.removeListener(listener);
-        console.log('[AFF HUB Ext] Timeout waiting for tab to complete');
-        resolve();
-      }, 10000);
-    });
-  }
-
-  await sendMessageWithRetry(tab.id, message);
+    },
+  }, 4);
 }
 
-// Handle Messages from Content Script or Popup
+async function startCommissionLookupJob(job) {
+  const affiliateUrl = 'https://affiliate.shopee.vn/offer/product_offer';
+  const tabs = await chrome.tabs.query({ url: '*://affiliate.shopee.vn/*' });
+  const tab = tabs[0]
+    ? await chrome.tabs.update(tabs[0].id, { active: false })
+    : await chrome.tabs.create({ url: affiliateUrl, active: false });
+  await waitForTabComplete(tab.id, 30000).catch(() => {});
+  await sendTabMessageWithRetry(tab.id, {
+    action: 'COMMISSION_LOOKUP',
+    lookupId: job.id,
+    payload: {
+      productUrl: job.payload?.productUrl,
+      itemId: job.payload?.itemId,
+    },
+  }, 4);
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     const { serverUrl } = await getConfig();
-
     if (message.action === 'SYNC_SERVER_URL' && message.serverUrl) {
       await chrome.storage.local.set({ serverUrl: message.serverUrl, userSetServer: true });
       await ensurePaired();
-      sendResponse({ ok: true, serverUrl: message.serverUrl });
-      return;
+      return sendResponse({ ok: true, serverUrl: message.serverUrl });
     }
-
     if (message.action === 'PRODUCTS_BATCH') {
-      const { scanJobId, shop, products, platform } = message;
       try {
-        const res = await fetch(`${serverUrl}/api/extension/scans/${scanJobId}/products`, {
+        const response = await fetch(`${serverUrl}/api/extension/scans/${message.scanJobId}/products`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ shop, products, platform: platform || shop?.platform || 'SHOPEE' }),
+          body: JSON.stringify({
+            shop: message.shop,
+            products: message.products,
+            platform: message.platform || message.shop?.platform || 'SHOPEE',
+          }),
         });
-        const data = await res.json();
-        if (!res.ok || data.error) {
-          sendResponse({ success: false, error: data.error || `HTTP ${res.status}` });
-        } else {
-          sendResponse({ success: true, data });
-        }
-      } catch (err) {
-        sendResponse({ success: false, error: err.message });
+        const data = await response.json();
+        return sendResponse(response.ok && !data.error
+          ? { success: true, data }
+          : { success: false, error: data.error || `HTTP ${response.status}` });
+      } catch (error) {
+        return sendResponse({ success: false, error: error.message });
       }
-    } else if (message.action === 'GET_SERVER_URL') {
-      sendResponse({ serverUrl });
-    } else if (message.action === 'SCAN_PROGRESS') {
-      const { scanJobId, progress, processedProducts } = message;
-      try {
-        await fetch(`${serverUrl}/api/extension/scans/${scanJobId}/progress`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ progress, processedProducts }),
-        });
-      } catch (err) {}
-    } else if (message.action === 'CLOSE_TAB') {
-      if (sender.tab && sender.tab.id) {
-        chrome.tabs.remove(sender.tab.id).catch(() => {});
-      }
-    } else if (message.action === 'SCAN_COMPLETE') {
-      const { scanJobId } = message;
-      try {
-        await fetch(`${serverUrl}/api/extension/scans/${scanJobId}/complete`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        activeScanJob = null;
-      } catch (err) {}
-    } else if (message.action === 'SCAN_ERROR') {
-      const { scanJobId, errorMessage } = message;
-      try {
-        await fetch(`${serverUrl}/api/extension/scans/${scanJobId}/error`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ errorMessage }),
-        });
-        activeScanJob = null;
-      } catch (err) {}
-    } else if (message.action === 'AFFILIATE_RESULT') {
-      const { jobId, affiliateUrl, error } = message;
-      try {
-        await fetch(`${serverUrl}/api/extension/affiliate/${jobId}/result`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ affiliateUrl, error }),
-        });
-      } catch (err) {}
-    } else if (message.action === 'GET_STATUS') {
-      const { deviceToken } = await getConfig();
-      sendResponse({
-        connected: Boolean(deviceToken),
-        activeScanJob,
-      });
-    } else if (message.action === 'VIDEO_BROWSER_START') {
-      // Don't block - run async orchestration
-      sendResponse({ started: true });
-      runVideoBrowserPipeline(message.payload);
     }
-  })();
-  return true; // Keep async channel open
+    if (message.action === 'GET_SERVER_URL') return sendResponse({ serverUrl });
+    if (message.action === 'SCAN_PROGRESS') {
+      await fetch(`${serverUrl}/api/extension/scans/${message.scanJobId}/progress`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ progress: message.progress, processedProducts: message.processedProducts }),
+      }).catch(() => {});
+      return sendResponse({ ok: true });
+    }
+    if (message.action === 'CLOSE_TAB' && sender.tab?.id) {
+      await chrome.tabs.remove(sender.tab.id).catch(() => {});
+      return sendResponse({ ok: true });
+    }
+    if (message.action === 'SCAN_COMPLETE') {
+      await fetch(`${serverUrl}/api/extension/scans/${message.scanJobId}/complete`, { method: 'POST' }).catch(() => {});
+      activeScanJob = null;
+      return sendResponse({ ok: true });
+    }
+    if (message.action === 'SCAN_ERROR') {
+      await fetch(`${serverUrl}/api/extension/scans/${message.scanJobId}/error`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ errorMessage: message.errorMessage }),
+      }).catch(() => {});
+      activeScanJob = null;
+      return sendResponse({ ok: true });
+    }
+    if (message.action === 'AFFILIATE_RESULT') {
+      await fetch(`${serverUrl}/api/extension/affiliate/${message.jobId}/result`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ affiliateUrl: message.affiliateUrl, error: message.error }),
+      }).catch(() => {});
+      return sendResponse({ ok: true });
+    }
+    if (message.action === 'COMMISSION_LOOKUP_START') {
+      try {
+        const affiliateUrl = 'https://affiliate.shopee.vn/offer/product_offer';
+        const tabs = await chrome.tabs.query({ url: '*://affiliate.shopee.vn/*' });
+        const tab = tabs[0]
+          ? await chrome.tabs.update(tabs[0].id, { active: false })
+          : await chrome.tabs.create({ url: affiliateUrl, active: false });
+        await waitForTabComplete(tab.id, 30000).catch(() => {});
+        const lookupId = message.payload?.lookupId || 'lookup_' + Date.now();
+        await chrome.storage.local.set({ commissionLookupResult: { status: 'loading', lookupId } });
+        await sendTabMessageWithRetry(tab.id, {
+          action: 'COMMISSION_LOOKUP',
+          lookupId,
+          payload: {
+            productUrl: message.payload?.productUrl,
+            itemId: message.payload?.itemId,
+          },
+        }, 4);
+        return sendResponse({ started: true, lookupId });
+      } catch (error) {
+        await chrome.storage.local.set({
+          commissionLookupResult: { status: 'error', error: error.message },
+        });
+        return sendResponse({ started: false, error: error.message });
+      }
+    }
+    if (message.action === 'COMMISSION_LOOKUP_RESULT') {
+      await chrome.storage.local.set({
+        commissionLookupResult: { ...message.result, status: 'done', lookupId: message.lookupId },
+      });
+      // Also report back to server if this was a server-initiated job
+      if (message.lookupId && !message.lookupId.startsWith('lookup_')) {
+        await fetch(`${serverUrl}/api/extension/commission/${message.lookupId}/result`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(message.result),
+        }).catch(() => {});
+      }
+      return sendResponse({ ok: true });
+    }
+    if (message.action === 'GET_STATUS') {
+      const { deviceToken } = await getConfig();
+      const pipeline = (await chrome.storage.local.get('videoPipelineState')).videoPipelineState || null;
+      return sendResponse({ connected: Boolean(deviceToken), activeScanJob, videoPipelineState: pipeline });
+    }
+    if (message.action === 'VIDEO_BROWSER_START') return sendResponse(await startVideoBrowserPipeline(message.payload));
+    if (message.action === 'VIDEO_BROWSER_PAUSE') return sendResponse(await pauseVideoBrowserPipeline());
+    if (message.action === 'VIDEO_BROWSER_RESUME') return sendResponse(await resumeVideoBrowserPipeline());
+    if (message.action === 'VIDEO_BROWSER_CANCEL') return sendResponse(await cancelVideoBrowserPipeline());
+    if (message.action === 'VIDEO_BROWSER_RETRY') return sendResponse(await retryVideoBrowserPipeline());
+    if (message.action === 'VIDEO_BROWSER_CHECK_CONNECTIONS') {
+      return sendResponse(await checkVideoConnections(message.payload || {}));
+    }
+    if (message.action === 'VIDEO_BROWSER_RESET') {
+      await chrome.storage.local.remove(['videoPipelineState', 'videoPipelinePayload']);
+      lastVideoPayload = null;
+      lastVideoArtifacts = {};
+      return sendResponse({ ok: true });
+    }
+    sendResponse({ ok: false, error: 'Unknown action' });
+  })().catch((error) => sendResponse({ ok: false, error: error.message }));
+  return true;
 });
 
-// --- VIDEO BROWSER PIPELINE ORCHESTRATOR ---
-async function runVideoBrowserPipeline({ imageData, chatgptUrl, flowUrl }) {
-  const updateState = async (updates) => {
-    const current = (await chrome.storage.local.get('videoPipelineState')).videoPipelineState || {};
-    await chrome.storage.local.set({ videoPipelineState: { ...current, ...updates } });
-  };
-
-  try {
-    // Reset state
-    await updateState({
-      analyzeStatus: 'active', promptStatus: 'pending',
-      video1Status: 'pending', video2Status: 'pending', mergeStatus: 'pending',
-      progress: 5, statusText: 'Đang mở ChatGPT...',
-      finalVideoUrl: null, error: null
-    });
-
-    // === STEP 1: Open ChatGPT and analyze image ===
-    const chatgptTab = await chrome.tabs.create({ url: chatgptUrl, active: false });
-    await waitForTabComplete(chatgptTab.id);
-    await sleep(3000); // Wait for ChatGPT to fully load
-
-    await updateState({ progress: 10, statusText: 'Đang gửi ảnh lên ChatGPT...' });
-
-    const analysisPrompt = `Hãy phân tích ảnh sản phẩm này và tạo 2 prompt video:
-- Prompt 1: Video quảng cáo kiểu marketing, close-up chi tiết sản phẩm, nền studio chuyên nghiệp
-- Prompt 2: Video lifestyle, sản phẩm đang được sử dụng, góc quay cinematic, ánh sáng tự nhiên
-
-Trả lời theo format:
-[PROMPT1]
-(nội dung prompt 1 bằng tiếng Anh)
-[/PROMPT1]
-[PROMPT2]
-(nội dung prompt 2 bằng tiếng Anh)
-[/PROMPT2]`;
-
-    // Send message to ChatGPT content script
-    const chatgptResult = await chrome.tabs.sendMessage(chatgptTab.id, {
-      action: 'CHATGPT_ANALYZE',
-      imageData,
-      prompt: analysisPrompt
-    });
-
-    if (!chatgptResult.success) throw new Error('ChatGPT analysis failed: ' + chatgptResult.error);
-    
-    await updateState({ analyzeStatus: 'done', promptStatus: 'active', progress: 25, statusText: 'Đang tách prompt...' });
-    
-    // Close ChatGPT tab
-    chrome.tabs.remove(chatgptTab.id);
-
-    // === STEP 2: Parse prompts from response ===
-    const prompt1Match = chatgptResult.responseText.match(/\[PROMPT1\]([\s\S]*?)\[\/PROMPT1\]/i);
-    const prompt2Match = chatgptResult.responseText.match(/\[PROMPT2\]([\s\S]*?)\[\/PROMPT2\]/i);
-    
-    const prompt1 = prompt1Match ? prompt1Match[1].trim() : 'Professional product showcase video with clean background';
-    const prompt2 = prompt2Match ? prompt2Match[1].trim() : 'Lifestyle video of product being used naturally';
-
-    await updateState({ promptStatus: 'done', progress: 30, statusText: 'Đã tách 2 prompt' });
-
-    // === STEP 3: Generate video 1 on Google Flow ===
-    await updateState({ video1Status: 'active', progress: 35, statusText: 'Đang tạo video 1 trên Google Flow...' });
-    
-    const flowTab1 = await chrome.tabs.create({ url: flowUrl, active: false });
-    await waitForTabComplete(flowTab1.id);
-    await sleep(4000); // Google Flow can be slow to fully initialize
-
-    const video1Result = await chrome.tabs.sendMessage(flowTab1.id, {
-      action: 'FLOW_GENERATE',
-      imageData,
-      prompt: prompt1
-    });
-
-    if (!video1Result.success) throw new Error('Google Flow video 1 failed: ' + video1Result.error);
-    
-    await updateState({ video1Status: 'done', progress: 55, statusText: 'Video 1 hoàn thành!' });
-    chrome.tabs.remove(flowTab1.id);
-
-    // === STEP 4: Generate video 2 on Google Flow ===
-    await updateState({ video2Status: 'active', progress: 60, statusText: 'Đang tạo video 2 trên Google Flow...' });
-
-    const flowTab2 = await chrome.tabs.create({ url: flowUrl, active: false });
-    await waitForTabComplete(flowTab2.id);
-    await sleep(4000);
-
-    const video2Result = await chrome.tabs.sendMessage(flowTab2.id, {
-      action: 'FLOW_GENERATE',
-      imageData,
-      prompt: prompt2
-    });
-
-    if (!video2Result.success) throw new Error('Google Flow video 2 failed: ' + video2Result.error);
-    
-    await updateState({ video2Status: 'done', progress: 80, statusText: 'Video 2 hoàn thành!' });
-    chrome.tabs.remove(flowTab2.id);
-
-    // === STEP 5: Merge videos via backend ===
-    await updateState({ mergeStatus: 'active', progress: 85, statusText: 'Đang ghép 2 video...' });
-
-    const serverUrl = (await chrome.storage.local.get('serverUrl')).serverUrl || 'http://localhost:3000';
-    const mergeRes = await fetch(`${serverUrl}/api/video/merge`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoUrls: [video1Result.videoUrl, video2Result.videoUrl] })
-    });
-    const mergeData = await mergeRes.json();
-
-    if (!mergeData.success) throw new Error('Video merge failed: ' + mergeData.error);
-
-    await updateState({
-      mergeStatus: 'done', progress: 100,
-      statusText: '✅ Video hoàn thành!',
-      finalVideoUrl: `${serverUrl}${mergeData.videoUrl}`
-    });
-
-  } catch (error) {
-    console.error('[AFF HUB] Pipeline error:', error);
-    await updateState({ error: error.message, statusText: '❌ Lỗi: ' + error.message });
+class PipelineCancelledError extends Error {
+  constructor() {
+    super('Pipeline đã bị hủy');
+    this.name = 'PipelineCancelledError';
   }
 }
 
-// Helper: Wait for tab to finish loading
-function waitForTabComplete(tabId) {
-  return new Promise((resolve) => {
-    const listener = (id, info) => {
-      if (id === tabId && info.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
-      }
-    };
-    chrome.tabs.onUpdated.addListener(listener);
+class FlowGenerationError extends Error {
+  constructor(message, fallbackUrl) {
+    super(message);
+    this.name = 'FlowGenerationError';
+    this.fallbackUrl = fallbackUrl || null;
+  }
+}
+
+async function updateVideoState(updates) {
+  const current = (await chrome.storage.local.get('videoPipelineState')).videoPipelineState || {};
+  const next = { ...current, ...updates, updatedAt: new Date().toISOString() };
+  await chrome.storage.local.set({ videoPipelineState: next });
+  return next;
+}
+
+function isVideoPipelineBusy() {
+  return Boolean(videoController && !videoController.finished && !videoController.cancelled);
+}
+
+async function startVideoBrowserPipeline(payload, options = {}) {
+  if (isVideoPipelineBusy()) return { started: false, error: 'Một pipeline video đang chạy.' };
+  if (!payload?.imageData) return { started: false, error: 'Thiếu ảnh sản phẩm.' };
+  let portableImageData;
+  try {
+    portableImageData = await makePortableImageData(payload.imageData);
+  } catch (error) {
+    return { started: false, error: error.message };
+  }
+  const normalizedPayload = {
+    ...payload,
+    imageData: portableImageData,
+    chatgptUrl: payload.chatgptUrl || DEFAULT_CHATGPT_URL,
+    flowUrl: payload.flowUrl || DEFAULT_FLOW_URL,
+  };
+  lastVideoPayload = normalizedPayload;
+  await chrome.storage.local.set({ videoPipelinePayload: normalizedPayload }).catch(() => {});
+  videoController = {
+    runId: `video_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    paused: false,
+    cancelled: false,
+    finished: false,
+    activeTabIds: new Set(),
+    failedStep: null,
+  };
+  const controller = videoController;
+  controller.task = runVideoBrowserPipeline(normalizedPayload, controller, options)
+    .catch((error) => console.error('[AFF HUB] Unhandled video pipeline error:', error));
+  return { started: true, runId: controller.runId };
+}
+
+async function makePortableImageData(imageData) {
+  if (imageData.startsWith('data:image/')) return imageData;
+  const response = await fetch(imageData, { credentials: 'omit' });
+  if (!response.ok) {
+    throw new Error(`Không tải được ảnh sản phẩm (HTTP ${response.status}). Hãy chọn ảnh từ máy.`);
+  }
+  const blob = await response.blob();
+  if (!blob.type.startsWith('image/')) throw new Error('Link sản phẩm không trả về tệp ảnh.');
+  if (blob.size > 15 * 1024 * 1024) throw new Error('Ảnh sản phẩm lớn hơn 15 MB.');
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return `data:${blob.type};base64,${btoa(binary)}`;
+}
+
+async function pauseVideoBrowserPipeline() {
+  if (!isVideoPipelineBusy()) return { ok: false, error: 'Không có pipeline đang chạy.' };
+  videoController.paused = true;
+  await broadcastVideoControl('AFF_CONTROL_PAUSE');
+  await updateVideoState({ status: 'paused', statusText: '⏸ Đã tạm dừng. Nhấn Tiếp tục để chạy tiếp.' });
+  return { ok: true };
+}
+
+async function resumeVideoBrowserPipeline() {
+  if (!isVideoPipelineBusy()) return { ok: false, error: 'Không có pipeline đang chạy.' };
+  videoController.paused = false;
+  await broadcastVideoControl('AFF_CONTROL_RESUME');
+  await updateVideoState({ status: 'running', statusText: '▶ Đang tiếp tục pipeline...' });
+  return { ok: true };
+}
+
+async function cancelVideoBrowserPipeline() {
+  if (!videoController || videoController.finished) return { ok: true };
+  videoController.cancelled = true;
+  videoController.paused = false;
+  await broadcastVideoControl('AFF_CONTROL_CANCEL');
+  await closeVideoTabs(videoController);
+  await updateVideoState({ status: 'cancelled', statusText: '⏹ Pipeline đã bị hủy.', error: null });
+  return { ok: true };
+}
+
+async function retryVideoBrowserPipeline() {
+  if (isVideoPipelineBusy()) return { started: false, error: 'Pipeline vẫn đang chạy.' };
+  if (!lastVideoPayload) lastVideoPayload = (await chrome.storage.local.get('videoPipelinePayload')).videoPipelinePayload || null;
+  if (!lastVideoPayload) return { started: false, error: 'Không còn dữ liệu để thử lại.' };
+  const previous = (await chrome.storage.local.get('videoPipelineState')).videoPipelineState || {};
+  const canResumeFromFailure = previous.failedStep && lastVideoArtifacts.prompt1;
+  return startVideoBrowserPipeline(lastVideoPayload, {
+    startStep: canResumeFromFailure ? previous.failedStep : 'analyze',
+    artifacts: canResumeFromFailure ? lastVideoArtifacts : {},
   });
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+async function broadcastVideoControl(action) {
+  if (!videoController) return;
+  await Promise.all([...videoController.activeTabIds].map((tabId) =>
+    chrome.tabs.sendMessage(tabId, { action }).catch(() => null)
+  ));
+}
 
-// Alarm Timers
+async function waitUntilRunnable(controller) {
+  if (controller.cancelled) throw new PipelineCancelledError();
+  while (controller.paused) {
+    await sleep(300);
+    if (controller.cancelled) throw new PipelineCancelledError();
+  }
+}
+
+async function openPipelineTab(url, controller, active = false) {
+  const tab = await chrome.tabs.create({ url, active });
+  controller.activeTabIds.add(tab.id);
+  await waitForTabComplete(tab.id, 45000);
+  await sleep(1800);
+  await waitUntilRunnable(controller);
+  return tab;
+}
+
+async function closePipelineTab(tabId, controller) {
+  controller.activeTabIds.delete(tabId);
+  await chrome.tabs.remove(tabId).catch(() => {});
+}
+
+async function closeVideoTabs(controller) {
+  const tabIds = [...(controller?.activeTabIds || [])];
+  controller?.activeTabIds?.clear();
+  await Promise.all(tabIds.map((tabId) => chrome.tabs.remove(tabId).catch(() => {})));
+}
+
+async function sendTabMessageWithRetry(tabId, message, retries = 5) {
+  let lastError;
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await chrome.tabs.sendMessage(tabId, message);
+    } catch (error) {
+      lastError = error;
+      await sleep(800 + attempt * 400);
+    }
+  }
+  throw new Error(`Không kết nối được content script: ${lastError?.message || 'unknown error'}`);
+}
+
+function parseVideoPrompts(responseText) {
+  const prompt1 = responseText.match(/\[PROMPT1\]([\s\S]*?)\[\/PROMPT1\]/i)?.[1]?.trim();
+  const prompt2 = responseText.match(/\[PROMPT2\]([\s\S]*?)\[\/PROMPT2\]/i)?.[1]?.trim();
+  if (!prompt1 || !prompt2) throw new Error('ChatGPT không trả về đúng cặp thẻ [PROMPT1] và [PROMPT2].');
+  return { prompt1, prompt2 };
+}
+
+function markStepError(step) {
+  if (step === 'analyze') return { analyzeStatus: 'error' };
+  return { [`${step}Status`]: 'error' };
+}
+
+async function runVideoBrowserPipeline(payload, controller, options = {}) {
+  const artifacts = { ...(options.artifacts || {}) };
+  const order = ['analyze', 'video1', 'video2', 'merge'];
+  const startIndex = Math.max(0, order.indexOf(options.startStep || 'analyze'));
+  let currentStep = order[startIndex];
+  const analysisPrompt = `Hãy phân tích ảnh sản phẩm và tạo đúng 2 prompt video bằng tiếng Anh.
+Prompt 1: quảng cáo sản phẩm, cận cảnh chi tiết, nền studio chuyên nghiệp.
+Prompt 2: lifestyle, sản phẩm đang được sử dụng, góc quay cinematic, ánh sáng tự nhiên.
+
+Chỉ trả lời theo định dạng:
+[PROMPT1]
+Nội dung prompt 1
+[/PROMPT1]
+[PROMPT2]
+Nội dung prompt 2
+[/PROMPT2]`;
+
+  try {
+    await updateVideoState({
+      runId: controller.runId,
+      status: 'running',
+      failedStep: null,
+      analyzeStatus: startIndex > 0 ? 'done' : 'active',
+      promptStatus: startIndex > 0 ? 'done' : 'pending',
+      video1Status: startIndex > 1 ? 'done' : 'pending',
+      video2Status: startIndex > 2 ? 'done' : 'pending',
+      mergeStatus: 'pending',
+      progress: startIndex > 0 ? 30 : 5,
+      statusText: startIndex > 0 ? '↻ Đang thử lại từ bước lỗi...' : 'Đang mở ChatGPT...',
+      finalVideoUrl: null,
+      resultLinks: [artifacts.video1?.resultPageUrl, artifacts.video2?.resultPageUrl].filter(Boolean),
+      mergeError: null,
+      error: null,
+    });
+
+    if (startIndex <= 0) {
+      currentStep = 'analyze';
+      await waitUntilRunnable(controller);
+      const chatgptTab = await openPipelineTab(payload.chatgptUrl, controller, false);
+      await updateVideoState({ progress: 10, statusText: 'Đang gửi ảnh và yêu cầu sang ChatGPT...' });
+      const health = await sendTabMessageWithRetry(chatgptTab.id, { action: 'AFF_PAGE_STATUS' });
+      if (!health?.ready) {
+        await chrome.tabs.update(chatgptTab.id, { active: true }).catch(() => {});
+        throw new Error(health?.message || 'Cần đăng nhập ChatGPT trước khi chạy.');
+      }
+      const result = await sendTabMessageWithRetry(chatgptTab.id, {
+        action: 'CHATGPT_ANALYZE',
+        imageData: payload.imageData,
+        prompt: analysisPrompt,
+      });
+      if (!result?.success) throw new Error(result?.error || 'ChatGPT phân tích thất bại.');
+      await closePipelineTab(chatgptTab.id, controller);
+      await updateVideoState({ analyzeStatus: 'done', promptStatus: 'active', progress: 25, statusText: 'Đang kiểm tra hai prompt...' });
+      Object.assign(artifacts, parseVideoPrompts(result.responseText));
+      lastVideoArtifacts = { ...artifacts };
+      await updateVideoState({ promptStatus: 'done', progress: 30, statusText: 'Đã nhận đủ hai prompt video.' });
+    }
+
+    if (startIndex <= 1) {
+      currentStep = 'video1';
+      await waitUntilRunnable(controller);
+      await updateVideoState({ video1Status: 'active', progress: 35, statusText: 'Đang cấu hình video 1 và gắn ảnh tham chiếu trên Google Flow...' });
+      artifacts.video1 = await generateFlowVideo(payload.flowUrl, payload.imageData, artifacts.prompt1, controller, 1, payload.flowOptions);
+      artifacts.video1Url = artifacts.video1.videoUrl || null;
+      lastVideoArtifacts = { ...artifacts };
+      await updateVideoState({
+        video1Status: 'done', progress: 55, statusText: 'Video 1 đã hoàn thành trên Flow.',
+        resultLinks: [artifacts.video1.resultPageUrl].filter(Boolean),
+      });
+    }
+
+    if (startIndex <= 2) {
+      currentStep = 'video2';
+      await waitUntilRunnable(controller);
+      await updateVideoState({ video2Status: 'active', progress: 60, statusText: 'Đang cấu hình video 2 và gắn ảnh tham chiếu trên Google Flow...' });
+      artifacts.video2 = await generateFlowVideo(payload.flowUrl, payload.imageData, artifacts.prompt2, controller, 2, payload.flowOptions);
+      artifacts.video2Url = artifacts.video2.videoUrl || null;
+      lastVideoArtifacts = { ...artifacts };
+      await updateVideoState({
+        video2Status: 'done', progress: 80, statusText: 'Video 2 đã hoàn thành trên Flow.',
+        resultLinks: [artifacts.video1?.resultPageUrl, artifacts.video2?.resultPageUrl].filter(Boolean),
+      });
+    }
+
+    currentStep = 'merge';
+    await waitUntilRunnable(controller);
+    const resultLinks = [artifacts.video1?.resultPageUrl, artifacts.video2?.resultPageUrl].filter(Boolean);
+    if (!artifacts.video1Url || !artifacts.video2Url) {
+      await updateVideoState({
+        status: 'completed_with_links',
+        mergeStatus: 'skipped',
+        progress: 100,
+        statusText: '✅ Flow đã tạo video. Không lấy được tệp trực tiếp; hãy mở link kết quả bên dưới.',
+        resultLinks,
+        finalVideoUrl: null,
+        error: null,
+      });
+      await reportExtensionVideoJob(payload.extensionJobId, { resultLinks }).catch(() => {});
+      return;
+    }
+    await updateVideoState({ mergeStatus: 'active', progress: 85, statusText: 'Đang ghép hai video...' });
+    const { serverUrl } = await getConfig();
+    let mergeData;
+    try {
+      const mergeResponse = await fetch(`${serverUrl}/api/video/merge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrls: [artifacts.video1Url, artifacts.video2Url] }),
+      });
+      mergeData = await mergeResponse.json().catch(() => ({}));
+      if (!mergeResponse.ok || !mergeData.success) {
+        throw new Error(mergeData.error || `Ghép video lỗi HTTP ${mergeResponse.status}`);
+      }
+    } catch (mergeError) {
+      await updateVideoState({
+        status: 'completed_with_links',
+        mergeStatus: 'error',
+        progress: 100,
+        statusText: '⚠ Video đã có trên Flow nhưng bước tải/ghép thất bại. Bạn vẫn có thể mở link kết quả.',
+        resultLinks,
+        mergeError: mergeError.message,
+        finalVideoUrl: null,
+        error: null,
+      });
+      await reportExtensionVideoJob(payload.extensionJobId, { resultLinks, mergeError: mergeError.message }).catch(() => {});
+      return;
+    }
+    const finalVideoUrl = new URL(mergeData.videoUrl, `${serverUrl}/`).toString();
+    await updateVideoState({
+      status: 'completed',
+      mergeStatus: 'done',
+      progress: 100,
+      statusText: '✅ Video hoàn thành!',
+      finalVideoUrl,
+      resultLinks,
+      error: null,
+    });
+    await reportExtensionVideoJob(payload.extensionJobId, { finalVideoUrl, resultLinks }).catch(() => {});
+  } catch (error) {
+    if (error instanceof PipelineCancelledError || controller.cancelled) {
+      await updateVideoState({ status: 'cancelled', statusText: '⏹ Pipeline đã bị hủy.', error: null });
+    } else {
+      controller.failedStep = currentStep;
+      console.error('[AFF HUB] Pipeline error:', error);
+      const previousState = (await chrome.storage.local.get('videoPipelineState')).videoPipelineState || {};
+      const fallbackLinks = [
+        ...(previousState.resultLinks || []),
+        error instanceof FlowGenerationError ? error.fallbackUrl : null,
+      ].filter(Boolean);
+      await updateVideoState({
+        status: 'error',
+        failedStep: currentStep,
+        ...markStepError(currentStep),
+        error: error.message,
+        statusText: `❌ Lỗi: ${error.message}`,
+        resultLinks: [...new Set(fallbackLinks)],
+      });
+      await reportExtensionVideoJob(payload.extensionJobId, null, error.message).catch(() => {});
+    }
+  } finally {
+    controller.finished = true;
+    await closeVideoTabs(controller);
+  }
+}
+
+async function generateFlowVideo(flowUrl, imageData, prompt, controller, sequence, flowOptions = {}) {
+  const flowTab = await openPipelineTab(flowUrl || DEFAULT_FLOW_URL, controller, false);
+  let health = await sendTabMessageWithRetry(flowTab.id, { action: 'AFF_PAGE_STATUS' });
+  if (!health?.ready && health?.code === 'AUTH_REQUIRED') {
+    controller.activeTabIds.delete(flowTab.id);
+    await chrome.tabs.update(flowTab.id, { active: true }).catch(() => {});
+    throw new FlowGenerationError(health.message || 'Cần đăng nhập Google Flow trước khi chạy.', flowTab.url || flowUrl);
+  }
+  if (health?.code === 'DASHBOARD_READY') {
+    const openResult = await sendTabMessageWithRetry(flowTab.id, { action: 'FLOW_OPEN_PROJECT' });
+    if (!openResult?.success) {
+      controller.activeTabIds.delete(flowTab.id);
+      await chrome.tabs.update(flowTab.id, { active: true }).catch(() => {});
+      throw new FlowGenerationError(openResult?.error || 'Không mở được dự án Google Flow.', flowTab.url || flowUrl);
+    }
+    await sleep(1200);
+    const readyStartedAt = Date.now();
+    while (Date.now() - readyStartedAt < 60000) {
+      await waitUntilRunnable(controller);
+      health = await sendTabMessageWithRetry(flowTab.id, { action: 'AFF_PAGE_STATUS' }, 2).catch(() => null);
+      if (health?.code === 'READY') break;
+      await sleep(700);
+    }
+    if (health?.code !== 'READY') {
+      controller.activeTabIds.delete(flowTab.id);
+      await chrome.tabs.update(flowTab.id, { active: true }).catch(() => {});
+      throw new FlowGenerationError('Dự án Flow không sẵn sàng sau 60 giây.', flowUrl);
+    }
+  }
+  if (health?.code !== 'READY') {
+    controller.activeTabIds.delete(flowTab.id);
+    await chrome.tabs.update(flowTab.id, { active: true }).catch(() => {});
+    throw new FlowGenerationError(health?.message || 'Cần mở một dự án Google Flow.', flowTab.url || flowUrl);
+  }
+  const result = await sendTabMessageWithRetry(flowTab.id, {
+    action: 'FLOW_GENERATE', imageData, prompt, sequence, options: flowOptions,
+  });
+  if (!result?.success) {
+    controller.activeTabIds.delete(flowTab.id);
+    await chrome.tabs.update(flowTab.id, { active: true }).catch(() => {});
+    throw new FlowGenerationError(
+      result?.error || `Google Flow video ${sequence} thất bại.`,
+      result?.fallbackUrl || result?.projectUrl || flowTab.url || flowUrl,
+    );
+  }
+  if (!result.resultPageUrl) {
+    controller.activeTabIds.delete(flowTab.id);
+    await chrome.tabs.update(flowTab.id, { active: true }).catch(() => {});
+    throw new FlowGenerationError('Flow báo hoàn tất nhưng không trả về trang kết quả video.', result.projectUrl || flowTab.url || flowUrl);
+  }
+
+  let extracted;
+  try {
+    await chrome.tabs.update(flowTab.id, { url: result.resultPageUrl, active: false });
+    await waitForTabComplete(flowTab.id, 45000);
+    await sleep(1800);
+    extracted = await sendTabMessageWithRetry(flowTab.id, { action: 'FLOW_EXTRACT_VIDEO' }, 5);
+  } catch (error) {
+    extracted = { success: false, error: error.message, resultPageUrl: result.resultPageUrl };
+  } finally {
+    await closePipelineTab(flowTab.id, controller);
+  }
+  return {
+    videoUrl: extracted?.success ? extracted.videoUrl : null,
+    directVideoUrl: extracted?.directVideoUrl || null,
+    portable: Boolean(extracted?.portable),
+    extractionError: extracted?.success ? extracted.extractionError || null : extracted?.error || 'Không lấy được tệp video.',
+    resultPageUrl: result.resultPageUrl,
+    projectUrl: result.projectUrl || flowUrl,
+    videoOptions: result.videoOptions || flowOptions,
+    reference: result.reference || null,
+  };
+}
+
+async function checkVideoConnections(payload) {
+  const [chatgpt, flow] = await Promise.all([
+    checkSingleConnection(payload.chatgptUrl || DEFAULT_CHATGPT_URL, 'ChatGPT'),
+    checkSingleConnection(payload.flowUrl || DEFAULT_FLOW_URL, 'Google Flow'),
+  ]);
+  return { chatgpt, flow };
+}
+
+async function checkSingleConnection(url, service) {
+  let tab;
+  try {
+    tab = await chrome.tabs.create({ url, active: false });
+    await waitForTabComplete(tab.id, 45000);
+    await sleep(1500);
+    const result = await sendTabMessageWithRetry(tab.id, { action: 'AFF_PAGE_STATUS' }, 4);
+    if (result?.ready) await chrome.tabs.remove(tab.id).catch(() => {});
+    else await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+    return result || { ready: false, message: `${service} không phản hồi.` };
+  } catch (error) {
+    if (tab?.id) await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+    return { ready: false, message: error.message };
+  }
+}
+
+async function reportExtensionVideoJob(jobId, result, error) {
+  if (!jobId) return;
+  const { serverUrl } = await getConfig();
+  await fetch(`${serverUrl}/api/extension/jobs/${jobId}/result`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ result, error }),
+  });
+}
+
+function waitForTabComplete(tabId, timeout = 30000) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const listener = (id, info) => {
+      if (id === tabId && info.status === 'complete') finish();
+    };
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(listener);
+      if (error) reject(error);
+      else resolve();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    const timer = setTimeout(() => finish(new Error('Timeout chờ trang tải xong.')), timeout);
+    chrome.tabs.get(tabId).then((tab) => {
+      if (tab.status === 'complete') finish();
+    }).catch(finish);
+  });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function markInterruptedPipeline() {
+  const stored = await chrome.storage.local.get('videoPipelineState');
+  if (['running', 'paused'].includes(stored.videoPipelineState?.status)) {
+    await updateVideoState({
+      status: 'interrupted',
+      error: 'Service worker đã khởi động lại. Nhấn Thử lại để tiếp tục.',
+      statusText: '⚠ Pipeline bị gián đoạn và có thể thử lại.',
+    });
+  }
+}
+
+chrome.runtime.onStartup.addListener(markInterruptedPipeline);
+chrome.runtime.onInstalled.addListener(() => {
+  ensurePaired();
+  markInterruptedPipeline();
+});
+
 sendHeartbeat();
 ensurePaired();
 setInterval(sendHeartbeat, 15000);

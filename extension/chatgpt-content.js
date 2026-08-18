@@ -1,235 +1,204 @@
-// AFF HUB Chrome Extension - ChatGPT Content Script
+// AFF HUB - ChatGPT page controller
 
 const CHATGPT_SELECTORS = {
-  editor: '#prompt-textarea, div[contenteditable="true"]',
-  fileInput: 'input[type="file"]',
-  attachButton: 'button[aria-label="Attach files"], button[data-testid="attach-button"]',
-  sendButton: 'button[data-testid="send-button"], button[aria-label*="Send"]',
-  stopButton: 'button[data-testid="stop-button"], button[aria-label="Stop generating"]',
-  streaming: '.result-streaming, .streaming',
+  editor: '#prompt-textarea, textarea[data-id="root"], main div[contenteditable="true"], form div[contenteditable="true"]',
+  fileInput: 'input[type="file"][accept*="image"], input[type="file"]',
+  attachButton: 'button[data-testid="attach-button"], button[data-testid="composer-plus-btn"], button[aria-label*="Attach" i], button[aria-label*="Upload" i], button[aria-label*="Add files" i]',
+  sendButton: 'button[data-testid="send-button"], button[data-testid="composer-submit-button"], button[aria-label*="Send" i], button[aria-label*="Gửi" i]',
+  stopButton: 'button[data-testid="stop-button"], button[aria-label*="Stop" i], button[aria-label*="Dừng" i]',
   assistantMessage: 'div[data-message-author-role="assistant"]',
-  copyButton: '[data-testid="copy-turn-action-button"]',
 };
 
-// UTILITY: Wait for element to appear in DOM
-async function waitForElement(selector, timeout = 15000) {
-  return new Promise((resolve, reject) => {
-    const el = document.querySelector(selector);
-    if (el) {
-      return resolve(el);
-    }
+let operationControl = { cancelled: false, paused: false };
 
-    const observer = new MutationObserver((mutations, obs) => {
-      const el = document.querySelector(selector);
-      if (el) {
-        obs.disconnect();
-        resolve(el);
-      }
-    });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
-
-    setTimeout(() => {
-      observer.disconnect();
-      reject(new Error(`[AFF HUB] Element timeout: ${selector}`));
-    }, timeout);
-  });
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// UTILITY: Convert URL or base64 to File blob
+async function waitWhilePaused() {
+  if (operationControl.cancelled) throw new Error('PIPELINE_CANCELLED');
+  while (operationControl.paused) {
+    await sleep(250);
+    if (operationControl.cancelled) throw new Error('PIPELINE_CANCELLED');
+  }
+}
+
+async function waitForElement(selector, timeout = 20000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeout) {
+    await waitWhilePaused();
+    const element = document.querySelector(selector);
+    if (element) return element;
+    await sleep(250);
+  }
+  throw new Error(`Không tìm thấy phần tử ChatGPT: ${selector}`);
+}
+
 async function urlToFile(urlOrBase64, filename = 'product.jpg') {
-  try {
-    if (urlOrBase64.startsWith('data:')) {
-      const arr = urlOrBase64.split(',');
-      const mime = arr[0].match(/:(.*?);/)[1];
-      const bstr = atob(arr[1]);
-      let n = bstr.length;
-      const u8arr = new Uint8Array(n);
-      while (n--) {
-        u8arr[n] = bstr.charCodeAt(n);
-      }
-      return new File([u8arr], filename, { type: mime });
-    } else {
-      const res = await fetch(urlOrBase64);
-      const blob = await res.blob();
-      return new File([blob], filename, { type: blob.type || 'image/jpeg' });
-    }
-  } catch (error) {
-    console.error('[AFF HUB] Error in urlToFile:', error);
-    throw error;
+  if (urlOrBase64.startsWith('data:')) {
+    const [header, encoded] = urlOrBase64.split(',');
+    const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+    const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+    return new File([bytes], filename, { type: mime });
   }
+  const response = await fetch(urlOrBase64, { credentials: 'omit' });
+  if (!response.ok) throw new Error(`Không tải được ảnh (HTTP ${response.status}). Hãy tải ảnh từ máy thay vì dùng URL.`);
+  const blob = await response.blob();
+  if (!blob.type.startsWith('image/')) throw new Error('URL không trả về tệp ảnh.');
+  return new File([blob], filename, { type: blob.type || 'image/jpeg' });
 }
 
-// CORE: Upload image to ChatGPT
+function findButtonByText(pattern) {
+  return [...document.querySelectorAll('button, [role="menuitem"]')]
+    .find((element) => pattern.test((element.innerText || element.textContent || '').trim()));
+}
+
+async function getFileInput() {
+  let input = document.querySelector(CHATGPT_SELECTORS.fileInput);
+  if (input) return input;
+  const attachButton = document.querySelector(CHATGPT_SELECTORS.attachButton);
+  if (attachButton) {
+    attachButton.click();
+    await sleep(600);
+    input = document.querySelector(CHATGPT_SELECTORS.fileInput);
+    if (input) return input;
+    const uploadItem = findButtonByText(/upload|tải (ảnh|tệp)|add photos|photos and files/i);
+    if (uploadItem) {
+      uploadItem.click();
+      await sleep(500);
+      input = document.querySelector(CHATGPT_SELECTORS.fileInput);
+    }
+  }
+  return input || waitForElement(CHATGPT_SELECTORS.fileInput, 10000);
+}
+
 async function uploadImage(imageData) {
-  try {
-    console.log('[AFF HUB] Uploading image to ChatGPT...');
-    const fileInput = await waitForElement(CHATGPT_SELECTORS.fileInput, 10000);
-    const file = await urlToFile(imageData);
-    
-    const dataTransfer = new DataTransfer();
-    dataTransfer.items.add(file);
-    fileInput.files = dataTransfer.files;
-    
-    const event = new Event('change', { bubbles: true });
-    fileInput.dispatchEvent(event);
-    console.log('[AFF HUB] Image uploaded.');
-  } catch (error) {
-    console.error('[AFF HUB] Error uploading image:', error);
-    throw error;
-  }
+  const fileInput = await getFileInput();
+  const file = await urlToFile(imageData);
+  const dataTransfer = new DataTransfer();
+  dataTransfer.items.add(file);
+  fileInput.files = dataTransfer.files;
+  fileInput.dispatchEvent(new Event('input', { bubbles: true }));
+  fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+  await sleep(1800);
+  await waitWhilePaused();
 }
 
-// CORE: Set text in the editor
 function setEditorText(text) {
-  try {
-    const editor = document.querySelector(CHATGPT_SELECTORS.editor);
-    if (!editor) throw new Error('Editor not found');
-    
-    editor.focus();
-    
-    // Attempt execCommand for rich text editors
-    const success = document.execCommand('insertText', false, text);
-    
-    if (!success) {
-      // Fallback
-      if (editor.tagName === 'TEXTAREA' || editor.tagName === 'INPUT') {
-        editor.value = text;
+  const editor = document.querySelector(CHATGPT_SELECTORS.editor);
+  if (!editor) throw new Error('Không tìm thấy ô nhập ChatGPT.');
+  editor.focus();
+  if (editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement) {
+    const prototype = editor instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+    if (setter) setter.call(editor, text);
+    else editor.value = text;
+  } else {
+    editor.replaceChildren();
+    const paragraph = document.createElement('p');
+    paragraph.textContent = text;
+    editor.appendChild(paragraph);
+  }
+  editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+  editor.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+async function clickSend() {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await waitWhilePaused();
+    const button = document.querySelector(CHATGPT_SELECTORS.sendButton);
+    if (button && !button.disabled && button.getAttribute('aria-disabled') !== 'true') {
+      button.click();
+      return;
+    }
+    await sleep(250);
+  }
+  const editor = document.querySelector(CHATGPT_SELECTORS.editor);
+  if (!editor) throw new Error('Không tìm thấy nút gửi ChatGPT.');
+  editor.dispatchEvent(new KeyboardEvent('keydown', {
+    bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13,
+  }));
+}
+
+async function waitForCompletion(initialMessageCount, timeout = 180000) {
+  const startedAt = Date.now();
+  let stableText = '';
+  let stableSince = 0;
+  while (Date.now() - startedAt < timeout) {
+    await waitWhilePaused();
+    const messages = document.querySelectorAll(CHATGPT_SELECTORS.assistantMessage);
+    const latest = messages[messages.length - 1];
+    const text = latest?.innerText?.trim() || '';
+    const generating = Boolean(document.querySelector(CHATGPT_SELECTORS.stopButton));
+    if (messages.length > initialMessageCount && text && !generating) {
+      if (text === stableText) {
+        if (Date.now() - stableSince > 1500) return text;
       } else {
-        editor.innerText = text;
-      }
-      editor.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-    console.log('[AFF HUB] Editor text set.');
-  } catch (error) {
-    console.error('[AFF HUB] Error setting editor text:', error);
-    throw error;
-  }
-}
-
-// CORE: Click send button
-function clickSend() {
-  try {
-    const sendButton = document.querySelector(CHATGPT_SELECTORS.sendButton);
-    if (sendButton && !sendButton.disabled) {
-      sendButton.click();
-      console.log('[AFF HUB] Send button clicked.');
-    } else {
-      console.log('[AFF HUB] Send button disabled or not found, simulating Enter key.');
-      const editor = document.querySelector(CHATGPT_SELECTORS.editor);
-      if (editor) {
-        const enterEvent = new KeyboardEvent('keydown', {
-          bubbles: true,
-          cancelable: true,
-          key: 'Enter',
-          code: 'Enter',
-          keyCode: 13
-        });
-        editor.dispatchEvent(enterEvent);
+        stableText = text;
+        stableSince = Date.now();
       }
     }
-  } catch (error) {
-    console.error('[AFF HUB] Error clicking send:', error);
-    throw error;
+    await sleep(500);
   }
+  throw new Error('ChatGPT phản hồi quá thời gian 3 phút.');
 }
 
-// CORE: Wait for ChatGPT to finish responding
-async function waitForCompletion(timeout = 120000) {
-  return new Promise((resolve, reject) => {
-    let checkInterval;
-    let timeoutId;
-    let generationStarted = false;
-    
-    console.log('[AFF HUB] Waiting for completion...');
-    
-    const check = () => {
-      try {
-        const stopBtn = document.querySelector(CHATGPT_SELECTORS.stopButton);
-        if (stopBtn) {
-          generationStarted = true;
-        } else if (generationStarted && !stopBtn) {
-          // Generation finished
-          clearInterval(checkInterval);
-          clearTimeout(timeoutId);
-          
-          const messages = document.querySelectorAll(CHATGPT_SELECTORS.assistantMessage);
-          if (messages.length > 0) {
-            const lastMessage = messages[messages.length - 1];
-            resolve(lastMessage.innerText);
-          } else {
-            reject(new Error('[AFF HUB] No assistant message found after generation.'));
-          }
-        }
-      } catch (error) {
-        clearInterval(checkInterval);
-        clearTimeout(timeoutId);
-        reject(error);
-      }
-    };
-    
-    checkInterval = setInterval(check, 500);
-    
-    timeoutId = setTimeout(() => {
-      clearInterval(checkInterval);
-      reject(new Error(`[AFF HUB] Timeout waiting for completion after ${timeout}ms`));
-    }, timeout);
-  });
+function getPageStatus() {
+  const url = location.href.toLowerCase();
+  if (url.includes('/auth') || url.includes('/login')) {
+    return { ready: false, code: 'AUTH_REQUIRED', message: 'cần đăng nhập' };
+  }
+  const editor = document.querySelector(CHATGPT_SELECTORS.editor);
+  if (!editor) return { ready: false, code: 'EDITOR_NOT_READY', message: 'chưa thấy ô chat' };
+  return { ready: true, code: 'READY', message: 'sẵn sàng' };
 }
 
-// MESSAGE HANDLER - receives commands from background.js
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'CHATGPT_ANALYZE') {
-    console.log('[AFF HUB] Received CHATGPT_ANALYZE message:', message);
-    (async () => {
-      try {
-        const { imageData, prompt } = message;
-        
-        // Step 1: Wait for ChatGPT to be ready
-        await waitForElement(CHATGPT_SELECTORS.editor, 10000);
-        await new Promise(r => setTimeout(r, 1000));
-        
-        // Step 2: Upload image
-        if (imageData) {
-          await uploadImage(imageData);
-          await new Promise(r => setTimeout(r, 2000)); // Wait for upload
-        }
-        
-        // Step 3: Type the prompt
-        const defaultPrompt = prompt || `Hãy phân tích ảnh sản phẩm này và tạo 2 prompt video:
-- Prompt 1: Video quảng cáo kiểu marketing, close-up chi tiết sản phẩm, nền studio chuyên nghiệp
-- Prompt 2: Video lifestyle, sản phẩm đang được sử dụng, góc quay cinematic, ánh sáng tự nhiên
-
-Trả lời theo format:
-[PROMPT1]
-(nội dung prompt 1 bằng tiếng Anh)
-[/PROMPT1]
-[PROMPT2]
-(nội dung prompt 2 bằng tiếng Anh)
-[/PROMPT2]`;
-        
-        setEditorText(defaultPrompt);
-        await new Promise(r => setTimeout(r, 500));
-        
-        // Step 4: Send
-        clickSend();
-        await new Promise(r => setTimeout(r, 1000)); // give time to start generating
-        
-        // Step 5: Wait for completion
-        const responseText = await waitForCompletion(120000);
-        console.log('[AFF HUB] ChatGPT response received.');
-        
-        sendResponse({ success: true, responseText });
-      } catch (error) {
-        console.error('[AFF HUB] CHATGPT_ANALYZE Error:', error);
-        sendResponse({ success: false, error: error.message });
-      }
-    })();
-    return true; // Keep channel open for async
+  if (message.action === 'AFF_PAGE_STATUS') {
+    sendResponse(getPageStatus());
+    return false;
   }
+  if (message.action === 'AFF_CONTROL_PAUSE') {
+    operationControl.paused = true;
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message.action === 'AFF_CONTROL_RESUME') {
+    operationControl.paused = false;
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message.action === 'AFF_CONTROL_CANCEL') {
+    operationControl.cancelled = true;
+    operationControl.paused = false;
+    document.querySelector(CHATGPT_SELECTORS.stopButton)?.click();
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message.action !== 'CHATGPT_ANALYZE') return false;
+
+  operationControl = { cancelled: false, paused: false };
+  (async () => {
+    try {
+      const status = getPageStatus();
+      if (!status.ready) throw new Error(status.code === 'AUTH_REQUIRED' ? 'AUTH_REQUIRED: Cần đăng nhập ChatGPT.' : status.message);
+      await waitForElement(CHATGPT_SELECTORS.editor, 15000);
+      const initialMessageCount = document.querySelectorAll(CHATGPT_SELECTORS.assistantMessage).length;
+      if (message.imageData) await uploadImage(message.imageData);
+      setEditorText(message.prompt);
+      await sleep(500);
+      await clickSend();
+      const responseText = await waitForCompletion(initialMessageCount);
+      sendResponse({ success: true, responseText });
+    } catch (error) {
+      sendResponse({
+        success: false,
+        code: error.message.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED' : undefined,
+        error: error.message === 'PIPELINE_CANCELLED' ? 'Pipeline đã bị hủy.' : error.message,
+      });
+    }
+  })();
+  return true;
 });
 
-console.log('[AFF HUB] ChatGPT Content Script Loaded.');
+console.log('[AFF HUB] ChatGPT controller loaded.');

@@ -1,225 +1,110 @@
 document.addEventListener('DOMContentLoaded', async () => {
-  const statusBadge = document.getElementById('statusBadge');
-  const statusText = document.getElementById('statusText');
-  const currentPage = document.getElementById('currentPage');
-  const deviceToken = document.getElementById('deviceToken');
-  const scanBtn = document.getElementById('scanBtn');
-
-  // Fetch current active tab
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab && tab.url) {
-    if (tab.url.includes('shopee.vn')) {
-      currentPage.innerText = 'Shopee Shop / Product';
-    } else {
-      currentPage.innerText = 'Không phải trang Shopee';
-      scanBtn.disabled = true;
-      scanBtn.style.opacity = '0.5';
-    }
-  }
-
-  // Get status from background
-  chrome.runtime.sendMessage({ action: 'GET_STATUS' }, (res) => {
-    if (res && res.connected) {
-      statusBadge.className = 'badge-status connected';
-      statusText.innerText = '● Connected';
-    } else {
-      statusBadge.className = 'badge-status disconnected';
-      statusText.innerText = '○ Not Connected';
-    }
+  const $ = (id) => document.getElementById(id);
+  const sendRuntime = (message) => new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      const error = chrome.runtime.lastError;
+      if (error) reject(new Error(error.message));
+      else resolve(response || {});
+    });
   });
 
-  // Get stored deviceToken & serverUrl
-  const serverSelect = document.getElementById('serverSelect');
-  const stored = await chrome.storage.local.get(['deviceToken', 'serverUrl']);
-  if (stored.deviceToken) {
-    deviceToken.innerText = `Device: ${stored.deviceToken.substring(0, 16)}...`;
-  }
-  if (stored.serverUrl && serverSelect) {
-    serverSelect.value = stored.serverUrl;
-  }
-  if (serverSelect) {
-    serverSelect.addEventListener('change', async (e) => {
-      const selectedUrl = e.target.value;
-      await chrome.storage.local.set({ serverUrl: selectedUrl, userSetServer: true });
-      chrome.runtime.sendMessage({ action: 'GET_STATUS' });
-    });
+  const statusBadge = $('statusBadge');
+  const statusText = $('statusText');
+  const currentPage = $('currentPage');
+  const deviceToken = $('deviceToken');
+  const scanBtn = $('scanBtn');
+  const serverSelect = $('serverSelect');
+
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const isMarketplace = Boolean(activeTab?.url && (activeTab.url.includes('shopee.vn') || activeTab.url.includes('tiktok.com')));
+  currentPage.textContent = isMarketplace ? 'Shopee / TikTok Shop' : 'Trang khác';
+  scanBtn.disabled = !isMarketplace;
+  scanBtn.style.opacity = isMarketplace ? '1' : '0.5';
+
+  try {
+    const status = await sendRuntime({ action: 'GET_STATUS' });
+    statusBadge.className = `badge-status ${status.connected ? 'connected' : 'disconnected'}`;
+    statusText.textContent = status.connected ? '● Connected' : '○ Not Connected';
+  } catch {
+    statusBadge.className = 'badge-status disconnected';
+    statusText.textContent = '○ Not Connected';
   }
 
-  // Click Scan Shop Button
+  const stored = await chrome.storage.local.get([
+    'deviceToken', 'serverUrl', 'chatgptUrl', 'flowUrl', 'flowReferenceMode',
+    'flowAspectRatio', 'flowDuration', 'videoPipelineState',
+  ]);
+  if (stored.deviceToken) deviceToken.textContent = `Device: ${stored.deviceToken.substring(0, 16)}...`;
+  if (stored.serverUrl && serverSelect) serverSelect.value = stored.serverUrl;
+
+  serverSelect?.addEventListener('change', async (event) => {
+    const selectedUrl = event.target.value;
+    await chrome.storage.local.set({ serverUrl: selectedUrl, userSetServer: true });
+    await sendRuntime({ action: 'SYNC_SERVER_URL', serverUrl: selectedUrl }).catch(() => {});
+  });
+
   scanBtn.addEventListener('click', async () => {
-    if (!tab || !tab.id) return;
-    scanBtn.innerText = 'ĐANG KHỞI TẠO QUÉT...';
+    if (!activeTab?.id) return;
+    scanBtn.textContent = 'ĐANG KHỞI TẠO QUÉT...';
     scanBtn.disabled = true;
-
-    chrome.tabs.sendMessage(tab.id, {
+    chrome.tabs.sendMessage(activeTab.id, {
       action: 'START_SCAN',
       scanJobId: `ext_${Date.now()}`,
     }, (response) => {
-      if (response && response.started) {
-        scanBtn.innerText = '✓ ĐANG QUÉT VỀ AFF HUB';
-      } else {
-        scanBtn.innerText = 'Hãy F5 lại trang Shopee!';
-      }
-    });
-  });
-  // --- TABS LOGIC ---
-  const tabs = document.querySelectorAll('.tab');
-  const tabContents = document.querySelectorAll('.tab-content');
-
-document.addEventListener('DOMContentLoaded', async () => {
-  const statusBadge = document.getElementById('statusBadge');
-  const statusText = document.getElementById('statusText');
-  const currentPage = document.getElementById('currentPage');
-  const deviceToken = document.getElementById('deviceToken');
-  const scanBtn = document.getElementById('scanBtn');
-
-  // Fetch current active tab
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab && tab.url) {
-    if (tab.url.includes('shopee.vn')) {
-      currentPage.innerText = 'Shopee Shop / Product';
-    } else {
-      currentPage.innerText = 'Không phải trang Shopee';
-      scanBtn.disabled = true;
-      scanBtn.style.opacity = '0.5';
-    }
-  }
-
-  // Get status from background
-  chrome.runtime.sendMessage({ action: 'GET_STATUS' }, (res) => {
-    if (res && res.connected) {
-      statusBadge.className = 'badge-status connected';
-      statusText.innerText = '● Connected';
-    } else {
-      statusBadge.className = 'badge-status disconnected';
-      statusText.innerText = '○ Not Connected';
-    }
-  });
-
-  // Get stored deviceToken & serverUrl
-  const serverSelect = document.getElementById('serverSelect');
-  const stored = await chrome.storage.local.get(['deviceToken', 'serverUrl']);
-  if (stored.deviceToken) {
-    deviceToken.innerText = `Device: ${stored.deviceToken.substring(0, 16)}...`;
-  }
-  if (stored.serverUrl && serverSelect) {
-    serverSelect.value = stored.serverUrl;
-  }
-  if (serverSelect) {
-    serverSelect.addEventListener('change', async (e) => {
-      const selectedUrl = e.target.value;
-      await chrome.storage.local.set({ serverUrl: selectedUrl, userSetServer: true });
-      chrome.runtime.sendMessage({ action: 'GET_STATUS' });
-    });
-  }
-
-  // Click Scan Shop Button
-  scanBtn.addEventListener('click', async () => {
-    if (!tab || !tab.id) return;
-    scanBtn.innerText = 'ĐANG KHỞI TẠO QUÉT...';
-    scanBtn.disabled = true;
-
-    chrome.tabs.sendMessage(tab.id, {
-      action: 'START_SCAN',
-      scanJobId: `ext_${Date.now()}`,
-    }, (response) => {
-      if (response && response.started) {
-        scanBtn.innerText = '✓ ĐANG QUÉT VỀ AFF HUB';
-      } else {
-        scanBtn.innerText = 'Hãy F5 lại trang Shopee!';
-      }
-    });
-  });
-  // --- TABS LOGIC ---
-  const tabs = document.querySelectorAll('.tab');
-  const tabContents = document.querySelectorAll('.tab-content');
-
-  tabs.forEach(t => {
-    t.addEventListener('click', () => {
-      tabs.forEach(x => x.classList.remove('active'));
-      tabContents.forEach(x => x.classList.remove('active'));
-      
-      t.classList.add('active');
-      document.getElementById(t.dataset.tab).classList.add('active');
+      scanBtn.textContent = response?.started ? '✓ ĐANG QUÉT VỀ AFF HUB' : 'Hãy F5 lại trang Shop!';
     });
   });
 
-  // --- VIDEO AI LOGIC ---
-  const videoImageUrl = document.getElementById('videoImageUrl');
-  const uploadArea = document.getElementById('uploadArea');
-  const imagePreview = document.getElementById('imagePreview');
-  const previewImg = document.getElementById('previewImg');
-  
-  const chatgptUrl = document.getElementById('chatgptUrl');
-  const flowUrl = document.getElementById('flowUrl');
-
-  const generateVideoBtn = document.getElementById('generateVideoBtn');
-  const videoProgress = document.getElementById('videoProgress');
-  const progressFill = document.getElementById('progressFill');
-  const progressText = document.getElementById('progressText');
-  
-  const videoResult = document.getElementById('videoResult');
-  const resultVideo = document.getElementById('resultVideo');
-  const downloadVideoBtn = document.getElementById('downloadVideoBtn');
-  const newVideoBtn = document.getElementById('newVideoBtn');
-
-  let currentImageBase64 = null;
-
-  // Load saved URLs
-  chrome.storage.local.get(['chatgptUrl', 'flowUrl']).then(savedUrls => {
-    if (savedUrls.chatgptUrl) chatgptUrl.value = savedUrls.chatgptUrl;
-    if (savedUrls.flowUrl) flowUrl.value = savedUrls.flowUrl;
+  document.querySelectorAll('.tab').forEach((tabButton) => {
+    tabButton.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach((item) => item.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach((item) => item.classList.remove('active'));
+      tabButton.classList.add('active');
+      $(tabButton.dataset.tab)?.classList.add('active');
+    });
   });
 
-  // Handle URL paste
-  videoImageUrl.addEventListener('input', (e) => {
-    const url = e.target.value.trim();
-    if (url.startsWith('http') || url.startsWith('data:image')) {
-      showPreview(url);
-      currentImageBase64 = url;
-    } else {
-      hidePreview();
-      currentImageBase64 = null;
+  const videoImageUrl = $('videoImageUrl');
+  const uploadArea = $('uploadArea');
+  const imagePreview = $('imagePreview');
+  const previewImg = $('previewImg');
+  const chatgptUrl = $('chatgptUrl');
+  const flowUrl = $('flowUrl');
+  const flowReferenceMode = $('flowReferenceMode');
+  const flowAspectRatio = $('flowAspectRatio');
+  const flowDuration = $('flowDuration');
+  const generateVideoBtn = $('generateVideoBtn');
+  const videoControls = $('videoControls');
+  const pauseVideoBtn = $('pauseVideoBtn');
+  const cancelVideoBtn = $('cancelVideoBtn');
+  const retryVideoBtn = $('retryVideoBtn');
+  const checkConnectionsBtn = $('checkConnectionsBtn');
+  const chatgptConnection = $('chatgptConnection');
+  const flowConnection = $('flowConnection');
+  const videoProgress = $('videoProgress');
+  const progressFill = $('progressFill');
+  const progressText = $('progressText');
+  const videoResult = $('videoResult');
+  const resultVideo = $('resultVideo');
+  const flowResultLinks = $('flowResultLinks');
+  const downloadVideoBtn = $('downloadVideoBtn');
+  const newVideoBtn = $('newVideoBtn');
+  let currentImageData = null;
+  let currentPipelineState = stored.videoPipelineState || null;
+
+  chatgptUrl.value = stored.chatgptUrl || 'https://chatgpt.com/';
+  flowUrl.value = stored.flowUrl || 'https://labs.google/fx/tools/flow';
+  flowReferenceMode.value = stored.flowReferenceMode || 'ingredient';
+  flowAspectRatio.value = stored.flowAspectRatio || '9:16';
+  flowDuration.value = String(stored.flowDuration || 8);
+
+  function validUrl(value, allowedHosts) {
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === 'https:' && allowedHosts.some((host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`));
+    } catch {
+      return false;
     }
-  });
-
-  // Handle File Upload
-  uploadArea.addEventListener('click', () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/jpeg, image/png, image/webp';
-    input.onchange = (e) => {
-      const file = e.target.files[0];
-      if (file) handleFile(file);
-    };
-    input.click();
-  });
-
-  uploadArea.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    uploadArea.style.borderColor = '#a855f7';
-  });
-
-  uploadArea.addEventListener('dragleave', () => {
-    uploadArea.style.borderColor = '#334155';
-  });
-
-  uploadArea.addEventListener('drop', (e) => {
-    e.preventDefault();
-    uploadArea.style.borderColor = '#334155';
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFile(e.dataTransfer.files[0]);
-    }
-  });
-
-  function handleFile(file) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      currentImageBase64 = e.target.result;
-      videoImageUrl.value = '';
-      showPreview(currentImageBase64);
-    };
-    reader.readAsDataURL(file);
   }
 
   function showPreview(src) {
@@ -231,123 +116,206 @@ document.addEventListener('DOMContentLoaded', async () => {
   function hidePreview() {
     imagePreview.style.display = 'none';
     uploadArea.style.display = 'block';
-    previewImg.src = '';
+    previewImg.removeAttribute('src');
   }
 
-  // Generate Video Flow
-  generateVideoBtn.addEventListener('click', async () => {
-    const imageData = currentImageBase64 || videoImageUrl.value.trim();
-    const chatGptUrlStr = chatgptUrl.value.trim();
-    const flowUrlStr = flowUrl.value.trim();
-
-    if (!imageData) {
-      alert('Vui lòng chọn hoặc nhập link ảnh sản phẩm!');
+  function handleFile(file) {
+    if (!file.type.startsWith('image/')) return;
+    if (file.size > 15 * 1024 * 1024) {
+      alert('Ảnh tối đa 15 MB.');
       return;
     }
-    if (!chatGptUrlStr) {
-      alert('Vui lòng nhập link trợ lý ChatGPT!');
-      return;
-    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      currentImageData = event.target.result;
+      videoImageUrl.value = '';
+      showPreview(currentImageData);
+    };
+    reader.readAsDataURL(file);
+  }
 
-    // Save URLs for next time
-    await chrome.storage.local.set({ chatgptUrl: chatGptUrlStr, flowUrl: flowUrlStr });
-
-    // UI State update
-    generateVideoBtn.style.display = 'none';
-    videoProgress.style.display = 'block';
-    resetStepIndicators();
-
-    // Send to background
-    chrome.runtime.sendMessage({
-      action: 'VIDEO_BROWSER_START',
-      payload: { imageData, chatgptUrl: chatGptUrlStr, flowUrl: flowUrlStr }
-    }, (res) => {
-      if (!res || !res.started) {
-        alert('Lỗi khởi tạo: ' + (res?.error || 'Unknown error'));
-        resetVideoUI();
-      }
-    });
+  videoImageUrl.addEventListener('input', (event) => {
+    const value = event.target.value.trim();
+    currentImageData = value.startsWith('http') || value.startsWith('data:image') ? value : null;
+    if (currentImageData) showPreview(currentImageData);
+    else hidePreview();
   });
 
-  // Progress monitoring via storage changes
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.videoPipelineState) {
-      const state = changes.videoPipelineState.newValue;
-      if (!state) return;
-      
-      // Update step indicators
-      updateStep('step-analyze', state.analyzeStatus); // 'pending' | 'active' | 'done' | 'error'
-      updateStep('step-prompt', state.promptStatus);
-      updateStep('step-video1', state.video1Status);
-      updateStep('step-video2', state.video2Status);
-      updateStep('step-merge', state.mergeStatus);
-      
-      progressFill.style.width = (state.progress || 0) + '%';
-      if (state.statusText) progressText.innerText = state.statusText;
-      
-      if (state.finalVideoUrl) {
-        showResult(state.finalVideoUrl);
-      }
-      if (state.error) {
-        alert('Lỗi: ' + state.error);
-        resetVideoUI();
-      }
-    }
+  uploadArea.addEventListener('click', () => {
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = 'image/jpeg,image/png,image/webp';
+    picker.onchange = (event) => handleFile(event.target.files?.[0]);
+    picker.click();
+  });
+  uploadArea.addEventListener('dragover', (event) => event.preventDefault());
+  uploadArea.addEventListener('drop', (event) => {
+    event.preventDefault();
+    handleFile(event.dataTransfer?.files?.[0]);
   });
 
   function updateStep(stepId, status) {
-    const el = document.getElementById(stepId);
-    if (!el) return;
-    el.className = 'progress-step';
-    const text = el.textContent.replace(/^[⏳🔄✅❌]\s*/, '');
-    if (status === 'active') {
-      el.classList.add('active');
-      el.textContent = '🔄 ' + text;
-    } else if (status === 'done') {
-      el.classList.add('done');
-      el.textContent = '✅ ' + text;
-    } else if (status === 'error') {
-      el.classList.add('error');
-      el.textContent = '❌ ' + text;
+    const element = $(stepId);
+    if (!element) return;
+    const label = element.dataset.label || element.textContent.replace(/^[^A-Za-zÀ-ỹ0-9]+\s*/, '');
+    element.dataset.label = label;
+    element.className = 'progress-step';
+    const icons = { active: '🔄', done: '✅', skipped: '⚠️', error: '❌', pending: '⏳' };
+    if (status === 'active') element.classList.add('active');
+    if (status === 'done') element.classList.add('done');
+    if (status === 'skipped') element.classList.add('error');
+    if (status === 'error') element.classList.add('error');
+    element.textContent = `${icons[status] || icons.pending} ${label}`;
+  }
+
+  function renderPipelineState(state) {
+    if (!state) return;
+    currentPipelineState = state;
+    ['analyze', 'prompt', 'video1', 'video2', 'merge'].forEach((step) => {
+      updateStep(`step-${step}`, state[`${step}Status`] || 'pending');
+    });
+    progressFill.style.width = `${state.progress || 0}%`;
+    progressText.textContent = state.statusText || 'Đang khởi tạo...';
+
+    const isRunning = state.status === 'running' || state.status === 'pausing' || state.status === 'paused';
+    generateVideoBtn.style.display = isRunning ? 'none' : 'flex';
+    videoControls.style.display = isRunning ? 'flex' : 'none';
+    const resultLinks = [...new Set((state.resultLinks || []).filter(Boolean))];
+    const hasResult = Boolean(state.finalVideoUrl || resultLinks.length);
+    videoProgress.style.display = isRunning || ['error', 'cancelled', 'completed_with_links'].includes(state.status) ? 'block' : 'none';
+    retryVideoBtn.style.display = state.status === 'error' || state.status === 'cancelled' || state.status === 'interrupted' ? 'flex' : 'none';
+    pauseVideoBtn.textContent = state.status === 'paused' || state.status === 'pausing' ? '▶ Tiếp tục' : '⏸ Tạm dừng';
+
+    videoResult.style.display = hasResult ? 'block' : 'none';
+    flowResultLinks.replaceChildren();
+    resultLinks.forEach((url, index) => {
+      const link = document.createElement('a');
+      link.className = 'result-link';
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = `🎬 Mở video ${index + 1} trên Google Flow`;
+      flowResultLinks.appendChild(link);
+    });
+
+    if (state.finalVideoUrl) {
+      videoControls.style.display = 'none';
+      retryVideoBtn.style.display = 'none';
+      resultVideo.style.display = 'block';
+      downloadVideoBtn.style.display = 'flex';
+      resultVideo.src = state.finalVideoUrl;
+      downloadVideoBtn.onclick = () => {
+        const link = document.createElement('a');
+        link.href = state.finalVideoUrl;
+        link.download = 'aff-video-ai.mp4';
+        link.target = '_blank';
+        link.click();
+      };
     } else {
-      el.textContent = '⏳ ' + text;
+      resultVideo.pause();
+      resultVideo.removeAttribute('src');
+      resultVideo.load();
+      resultVideo.style.display = 'none';
+      downloadVideoBtn.style.display = 'none';
     }
   }
 
-  function showResult(videoUrl) {
-    videoProgress.style.display = 'none';
-    videoResult.style.display = 'block';
-    resultVideo.src = videoUrl;
-    
-    downloadVideoBtn.onclick = () => {
-      const a = document.createElement('a');
-      a.href = videoUrl;
-      a.download = 'aff_video_ai.mp4';
-      a.target = '_blank';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+  async function startVideo() {
+    const imageData = currentImageData || videoImageUrl.value.trim();
+    const chatgpt = chatgptUrl.value.trim();
+    const flow = flowUrl.value.trim();
+    const flowOptions = {
+      referenceMode: flowReferenceMode.value,
+      aspectRatio: flowAspectRatio.value,
+      duration: Number(flowDuration.value),
+      outputCount: 1,
     };
-  }
+    if (!imageData) return alert('Vui lòng chọn ảnh sản phẩm.');
+    if (!validUrl(chatgpt, ['chatgpt.com'])) return alert('Link ChatGPT không hợp lệ.');
+    if (!validUrl(flow, ['flow.google', 'labs.google'])) return alert('Link Google Flow không hợp lệ.');
 
-  newVideoBtn.addEventListener('click', resetVideoUI);
-
-  function resetStepIndicators() {
-    updateStep('step-analyze', 'pending');
-    updateStep('step-prompt', 'pending');
-    updateStep('step-video1', 'pending');
-    updateStep('step-video2', 'pending');
-    updateStep('step-merge', 'pending');
-  }
-
-  function resetVideoUI() {
-    generateVideoBtn.style.display = 'block';
-    videoProgress.style.display = 'none';
+    await chrome.storage.local.set({
+      chatgptUrl: chatgpt,
+      flowUrl: flow,
+      flowReferenceMode: flowOptions.referenceMode,
+      flowAspectRatio: flowOptions.aspectRatio,
+      flowDuration: flowOptions.duration,
+    });
     videoResult.style.display = 'none';
-    videoImageUrl.value = '';
-    currentImageBase64 = null;
-    hidePreview();
-    resultVideo.src = '';
-    resetStepIndicators();
+    videoProgress.style.display = 'block';
+    retryVideoBtn.style.display = 'none';
+    renderPipelineState({
+      status: 'running', progress: 1, statusText: 'Đang khởi tạo...',
+      analyzeStatus: 'active', promptStatus: 'pending', video1Status: 'pending', video2Status: 'pending', mergeStatus: 'pending',
+    });
+    try {
+      const response = await sendRuntime({
+        action: 'VIDEO_BROWSER_START',
+        payload: { imageData, chatgptUrl: chatgpt, flowUrl: flow, flowOptions },
+      });
+      if (!response.started) throw new Error(response.error || 'Không khởi động được pipeline');
+    } catch (error) {
+      alert(`Lỗi khởi tạo: ${error.message}`);
+      generateVideoBtn.style.display = 'flex';
+      videoControls.style.display = 'none';
+    }
   }
+
+  async function checkConnections() {
+    checkConnectionsBtn.disabled = true;
+    checkConnectionsBtn.textContent = 'ĐANG KIỂM TRA...';
+    try {
+      const response = await sendRuntime({
+        action: 'VIDEO_BROWSER_CHECK_CONNECTIONS',
+        payload: { chatgptUrl: chatgptUrl.value.trim(), flowUrl: flowUrl.value.trim() },
+      });
+      const paint = (element, label, state) => {
+        element.className = `connection-item ${state?.ready ? 'ready' : 'login'}`;
+        element.textContent = `${label}: ${state?.ready ? 'sẵn sàng' : (state?.message || 'cần đăng nhập')}`;
+      };
+      paint(chatgptConnection, 'ChatGPT', response.chatgpt);
+      paint(flowConnection, 'Flow', response.flow);
+    } catch (error) {
+      alert(`Không kiểm tra được: ${error.message}`);
+    } finally {
+      checkConnectionsBtn.disabled = false;
+      checkConnectionsBtn.textContent = 'KIỂM TRA KẾT NỐI';
+    }
+  }
+
+  generateVideoBtn.addEventListener('click', startVideo);
+  checkConnectionsBtn.addEventListener('click', checkConnections);
+  pauseVideoBtn.addEventListener('click', async () => {
+    const action = currentPipelineState?.status === 'paused' || currentPipelineState?.status === 'pausing'
+      ? 'VIDEO_BROWSER_RESUME' : 'VIDEO_BROWSER_PAUSE';
+    await sendRuntime({ action }).catch((error) => alert(error.message));
+  });
+  cancelVideoBtn.addEventListener('click', async () => {
+    await sendRuntime({ action: 'VIDEO_BROWSER_CANCEL' }).catch((error) => alert(error.message));
+  });
+  retryVideoBtn.addEventListener('click', async () => {
+    const response = await sendRuntime({ action: 'VIDEO_BROWSER_RETRY' }).catch((error) => ({ started: false, error: error.message }));
+    if (!response.started) alert(response.error || 'Không thể thử lại');
+  });
+
+  newVideoBtn.addEventListener('click', async () => {
+    await sendRuntime({ action: 'VIDEO_BROWSER_RESET' }).catch(() => {});
+    currentImageData = null;
+    videoImageUrl.value = '';
+    hidePreview();
+    videoResult.style.display = 'none';
+    videoProgress.style.display = 'none';
+    retryVideoBtn.style.display = 'none';
+    generateVideoBtn.style.display = 'flex';
+    resultVideo.removeAttribute('src');
+    flowResultLinks.replaceChildren();
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.videoPipelineState?.newValue) {
+      renderPipelineState(changes.videoPipelineState.newValue);
+    }
+  });
+
+  if (currentPipelineState) renderPipelineState(currentPipelineState);
 });

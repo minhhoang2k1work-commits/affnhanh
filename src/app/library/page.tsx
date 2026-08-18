@@ -117,14 +117,16 @@ function LibraryContent() {
       if (event.data?.type === 'AFF_VIDEO_STATE') {
         const state = event.data.state;
         setVideoPipelineState(state);
+        if (state && ['running', 'paused', 'error', 'cancelled', 'interrupted', 'completed', 'completed_with_links'].includes(state.status)) {
+          setVideoCreating(true);
+        }
         if (state?.finalVideoUrl) {
           showToast('🎬 Video hoàn thành!');
+        } else if (state?.status === 'completed_with_links') {
+          showToast('🎬 Video đã có trên Flow — mở link kết quả để xem.');
         }
         if (state?.error) {
           showToast('❌ Lỗi: ' + state.error);
-        }
-        if (state?.finalVideoUrl || state?.error) {
-          setTimeout(() => setVideoCreating(false), 3000);
         }
       }
     };
@@ -132,6 +134,7 @@ function LibraryContent() {
     if (document.documentElement.getAttribute('data-aff-extension-installed') === 'true') {
       setExtensionInstalled(true);
     }
+    window.postMessage({ type: 'AFF_VIDEO_STATUS' }, '*');
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
@@ -141,7 +144,7 @@ function LibraryContent() {
       return;
     }
     let chatgptUrl = localStorage.getItem('aff_chatgpt_url') || '';
-    const flowUrl = localStorage.getItem('aff_flow_url') || 'https://flow.google';
+    const flowUrl = localStorage.getItem('aff_flow_url') || 'https://labs.google/fx/tools/flow';
 
     if (!chatgptUrl) {
       const url = prompt('Nhập link ChatGPT trợ lý phân tích sản phẩm:', 'https://chatgpt.com/g/g-xxxxx');
@@ -161,7 +164,21 @@ function LibraryContent() {
       flowUrl,
       productId: product.id,
       productName: product.name,
+      flowOptions: {
+        referenceMode: 'ingredient',
+        aspectRatio: '9:16',
+        duration: 8,
+        outputCount: 1,
+      },
     }, '*');
+  };
+
+  const handleVideoControl = (command: 'pause' | 'resume' | 'cancel' | 'retry' | 'reset') => {
+    window.postMessage({ type: 'AFF_VIDEO_CONTROL', command }, '*');
+    if (command === 'reset') {
+      setVideoCreating(false);
+      setVideoPipelineState(null);
+    }
   };
 
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
@@ -1535,10 +1552,12 @@ function LibraryContent() {
                   <div key={key} className={`flex items-center gap-2 ${
                     status === 'active' ? 'text-cyan-300' :
                     status === 'done' ? 'text-emerald-400' :
+                    status === 'skipped' ? 'text-amber-300' :
                     status === 'error' ? 'text-red-400' : 'text-slate-500'
                   }`}>
                     {status === 'active' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                     {status === 'done' && <Check className="w-3.5 h-3.5" />}
+                    {status === 'skipped' && <Info className="w-3.5 h-3.5" />}
                     {status === 'error' && <X className="w-3.5 h-3.5" />}
                     {status === 'pending' && <Clock className="w-3.5 h-3.5" />}
                     <span>{label}</span>
@@ -1558,6 +1577,40 @@ function LibraryContent() {
               {videoPipelineState?.statusText || 'Đang khởi tạo...'}
             </div>
 
+            {['running', 'paused'].includes(videoPipelineState?.status) && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleVideoControl(videoPipelineState?.status === 'paused' ? 'resume' : 'pause')}
+                  className="flex-1 py-2 rounded-xl bg-amber-900/40 border border-amber-500/30 text-amber-200 text-xs font-bold hover:bg-amber-800/50 transition-all"
+                >
+                  {videoPipelineState?.status === 'paused' ? '▶ Tiếp tục' : '⏸ Tạm dừng'}
+                </button>
+                <button
+                  onClick={() => handleVideoControl('cancel')}
+                  className="flex-1 py-2 rounded-xl bg-red-900/40 border border-red-500/30 text-red-200 text-xs font-bold hover:bg-red-800/50 transition-all"
+                >
+                  ⏹ Hủy pipeline
+                </button>
+              </div>
+            )}
+
+            {['error', 'cancelled', 'interrupted'].includes(videoPipelineState?.status) && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleVideoControl('retry')}
+                  className="flex-1 py-2 rounded-xl bg-cyan-900/50 border border-cyan-500/30 text-cyan-200 text-xs font-bold hover:bg-cyan-800/50 transition-all"
+                >
+                  ↻ Thử lại
+                </button>
+                <button
+                  onClick={() => handleVideoControl('reset')}
+                  className="flex-1 py-2 rounded-xl bg-slate-800 text-white text-xs font-bold hover:bg-slate-700 transition-all"
+                >
+                  ✕ Đóng
+                </button>
+              </div>
+            )}
+
             {/* Result */}
             {videoPipelineState?.finalVideoUrl && (
               <div className="space-y-2">
@@ -1575,7 +1628,7 @@ function LibraryContent() {
                     ⬇️ Tải Video
                   </a>
                   <button
-                    onClick={() => { setVideoCreating(false); setVideoPipelineState(null); }}
+                    onClick={() => handleVideoControl('reset')}
                     className="flex-1 py-2 rounded-xl bg-slate-800 text-white text-xs font-bold text-center hover:bg-slate-700 transition-all"
                   >
                     ✕ Đóng
@@ -1584,15 +1637,32 @@ function LibraryContent() {
               </div>
             )}
 
-            {/* Error close button */}
-            {videoPipelineState?.error && (
-              <button
-                onClick={() => { setVideoCreating(false); setVideoPipelineState(null); }}
-                className="w-full py-2 rounded-xl bg-red-900/50 border border-red-500/30 text-red-300 text-xs font-bold hover:bg-red-800/50 transition-all"
-              >
-                ✕ Đóng
-              </button>
+            {Array.isArray(videoPipelineState?.resultLinks) && videoPipelineState.resultLinks.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-[11px] font-bold text-cyan-200">Kết quả gốc trên Google Flow</div>
+                {[...new Set<string>(videoPipelineState.resultLinks.filter(Boolean))].map((url, index) => (
+                  <a
+                    key={url}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 w-full py-2 rounded-xl bg-cyan-900/40 border border-cyan-500/30 text-cyan-200 text-xs font-bold hover:bg-cyan-800/50 transition-all"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Mở video {index + 1} trên Flow
+                  </a>
+                ))}
+                {videoPipelineState?.status === 'completed_with_links' && (
+                  <button
+                    onClick={() => handleVideoControl('reset')}
+                    className="w-full py-2 rounded-xl bg-slate-800 text-white text-xs font-bold hover:bg-slate-700 transition-all"
+                  >
+                    ✕ Đóng
+                  </button>
+                )}
+              </div>
             )}
+
           </div>
         </div>
       )}

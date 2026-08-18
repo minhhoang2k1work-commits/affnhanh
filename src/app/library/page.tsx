@@ -51,6 +51,51 @@ import { AddToCollectionModal } from '@/components/collections/AddToCollectionMo
 
 export const dynamic = 'force-dynamic';
 
+type VideoFlowSettings = {
+  chatgptUrl: string;
+  flowUrl: string;
+  referenceMode: 'ingredient' | 'frame';
+  aspectRatio: '9:16' | '16:9';
+  duration: 4 | 6 | 8 | 10;
+  outputCount: 1;
+};
+
+const VIDEO_SETTINGS_STORAGE_KEY = 'aff_video_flow_settings';
+const DEFAULT_VIDEO_FLOW_SETTINGS: VideoFlowSettings = {
+  chatgptUrl: 'https://chatgpt.com/',
+  flowUrl: 'https://labs.google/fx/tools/flow',
+  referenceMode: 'ingredient',
+  aspectRatio: '9:16',
+  duration: 8,
+  outputCount: 1,
+};
+
+function normalizeVideoFlowSettings(value: Partial<VideoFlowSettings> = {}): VideoFlowSettings {
+  const duration = Number(value.duration);
+  return {
+    chatgptUrl: String(value.chatgptUrl || DEFAULT_VIDEO_FLOW_SETTINGS.chatgptUrl).trim(),
+    flowUrl: String(value.flowUrl || DEFAULT_VIDEO_FLOW_SETTINGS.flowUrl).trim(),
+    referenceMode: value.referenceMode === 'frame' ? 'frame' : 'ingredient',
+    aspectRatio: value.aspectRatio === '16:9' ? '16:9' : '9:16',
+    duration: ([4, 6, 8, 10].includes(duration) ? duration : 8) as VideoFlowSettings['duration'],
+    outputCount: 1,
+  };
+}
+
+function isAllowedAutomationUrl(value: string, service: 'chatgpt' | 'flow') {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:') return false;
+    if (service === 'chatgpt') {
+      return url.hostname === 'chatgpt.com' || url.hostname.endsWith('.chatgpt.com');
+    }
+    return url.hostname === 'flow.google' || url.hostname.endsWith('.flow.google') ||
+      url.hostname === 'labs.google' || url.hostname.endsWith('.labs.google');
+  } catch {
+    return false;
+  }
+}
+
 // Helper: Classify sold tier for potential analysis
 function getSoldTier(sold: number): { label: string; emoji: string; color: string; bgColor: string } {
   if (sold >= 10000) return { label: 'Siêu Hot', emoji: '🔥', color: 'text-rose-400', bgColor: 'bg-rose-500/20' };
@@ -100,6 +145,25 @@ function LibraryContent() {
   const [videoProductName, setVideoProductName] = useState('');
   const [videoPipelineState, setVideoPipelineState] = useState<any>(null);
   const [extensionInstalled, setExtensionInstalled] = useState(false);
+  const [videoSettingsOpen, setVideoSettingsOpen] = useState(false);
+  const [videoFlowSettings, setVideoFlowSettings] = useState<VideoFlowSettings>(DEFAULT_VIDEO_FLOW_SETTINGS);
+  const [videoSettingsDraft, setVideoSettingsDraft] = useState<VideoFlowSettings>(DEFAULT_VIDEO_FLOW_SETTINGS);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(VIDEO_SETTINGS_STORAGE_KEY) || 'null') || {};
+      const settings = normalizeVideoFlowSettings({
+        ...saved,
+        chatgptUrl: saved.chatgptUrl || localStorage.getItem('aff_chatgpt_url') || undefined,
+        flowUrl: saved.flowUrl || localStorage.getItem('aff_flow_url') || undefined,
+      });
+      setVideoFlowSettings(settings);
+      setVideoSettingsDraft(settings);
+    } catch {
+      setVideoFlowSettings(DEFAULT_VIDEO_FLOW_SETTINGS);
+      setVideoSettingsDraft(DEFAULT_VIDEO_FLOW_SETTINGS);
+    }
+  }, []);
 
   // Check extension installed & listen for video pipeline state
   useEffect(() => {
@@ -143,14 +207,12 @@ function LibraryContent() {
       showToast('Cần cài đặt AFF HUB Extension để tạo video!');
       return;
     }
-    let chatgptUrl = localStorage.getItem('aff_chatgpt_url') || '';
-    const flowUrl = localStorage.getItem('aff_flow_url') || 'https://labs.google/fx/tools/flow';
-
-    if (!chatgptUrl) {
-      const url = prompt('Nhập link ChatGPT trợ lý phân tích sản phẩm:', 'https://chatgpt.com/g/g-xxxxx');
-      if (!url) return;
-      localStorage.setItem('aff_chatgpt_url', url);
-      chatgptUrl = url;
+    if (!isAllowedAutomationUrl(videoFlowSettings.chatgptUrl, 'chatgpt') ||
+        !isAllowedAutomationUrl(videoFlowSettings.flowUrl, 'flow')) {
+      setVideoSettingsDraft(videoFlowSettings);
+      setVideoSettingsOpen(true);
+      showToast('Hãy kiểm tra và lưu Cấu hình Video AI trước khi tạo.');
+      return;
     }
 
     setVideoCreating(true);
@@ -160,8 +222,8 @@ function LibraryContent() {
     window.postMessage({
       type: 'AFF_CREATE_VIDEO',
       imageUrl: product.image,
-      chatgptUrl,
-      flowUrl,
+      chatgptUrl: videoFlowSettings.chatgptUrl,
+      flowUrl: videoFlowSettings.flowUrl,
       productId: product.id,
       productName: product.name,
       productContext: {
@@ -182,9 +244,9 @@ function LibraryContent() {
         voucherPlatform: product.voucherPlatform,
       },
       flowOptions: {
-        referenceMode: 'ingredient',
-        aspectRatio: '9:16',
-        duration: 8,
+        referenceMode: videoFlowSettings.referenceMode,
+        aspectRatio: videoFlowSettings.aspectRatio,
+        duration: videoFlowSettings.duration,
         outputCount: 1,
       },
     }, '*');
@@ -387,6 +449,31 @@ function LibraryContent() {
     setTimeout(() => setToastMsg(null), 3000);
   };
 
+  const openVideoSettings = () => {
+    setVideoSettingsDraft(videoFlowSettings);
+    setVideoSettingsOpen(true);
+  };
+
+  const handleSaveVideoSettings = () => {
+    const settings = normalizeVideoFlowSettings(videoSettingsDraft);
+    if (!isAllowedAutomationUrl(settings.chatgptUrl, 'chatgpt')) {
+      showToast('Link ChatGPT phải thuộc miền https://chatgpt.com');
+      return;
+    }
+    if (!isAllowedAutomationUrl(settings.flowUrl, 'flow')) {
+      showToast('Link Flow phải thuộc miền https://labs.google hoặc https://flow.google');
+      return;
+    }
+
+    localStorage.setItem(VIDEO_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    localStorage.setItem('aff_chatgpt_url', settings.chatgptUrl);
+    localStorage.setItem('aff_flow_url', settings.flowUrl);
+    setVideoFlowSettings(settings);
+    setVideoSettingsDraft(settings);
+    setVideoSettingsOpen(false);
+    showToast(`Đã lưu cấu hình Video · ${settings.duration}s · ${settings.aspectRatio} · x1`);
+  };
+
   // Section 20: 1-Click Copy Affiliate Link (Button state toggle for 2 seconds)
   const handleCopyAffLink = (affUrl: string | null, origUrl: string, id: string) => {
     const linkToCopy = affUrl || origUrl;
@@ -573,7 +660,21 @@ function LibraryContent() {
         </div>
 
         {/* View Mode & Batch Link Button */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={openVideoSettings}
+            className="px-3 py-2 rounded-xl bg-cyan-950/60 border border-cyan-500/40 text-cyan-100 hover:bg-cyan-900/70 transition-all flex items-center gap-2"
+            title="Thiết lập cố định cho mọi lần tạo video trên Google Flow"
+          >
+            <SlidersHorizontal className="w-4 h-4 text-cyan-300" />
+            <span className="text-left leading-tight">
+              <span className="block text-[10px] font-extrabold">CẤU HÌNH VIDEO AI</span>
+              <span className="block text-[9px] text-cyan-300/80">
+                {videoFlowSettings.duration}s · {videoFlowSettings.aspectRatio} · {videoFlowSettings.referenceMode === 'ingredient' ? 'Thành phần' : 'Khung hình'} · x1
+              </span>
+            </span>
+          </button>
+
           {unconfiguredCount > 0 && (
             <button
               onClick={handleBatchGenerateAffiliate}
@@ -1534,6 +1635,126 @@ function LibraryContent() {
         </div>
       )}
 
+      {/* Video AI Settings Modal */}
+      {videoSettingsOpen && (
+        <div className="fixed inset-0 bg-black/70 z-[9998] flex items-center justify-center p-4">
+          <div className="bg-slate-950 border border-cyan-500/30 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-slate-800 bg-gradient-to-r from-cyan-950/50 to-slate-950">
+              <div>
+                <div className="flex items-center gap-2 text-white font-extrabold text-sm">
+                  <SlidersHorizontal className="w-5 h-5 text-cyan-300" />
+                  Cấu hình Video AI
+                </div>
+                <p className="mt-1 text-[11px] text-slate-400">Extension sẽ dùng đúng cấu hình này cho mọi sản phẩm.</p>
+              </div>
+              <button
+                onClick={() => setVideoSettingsOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                aria-label="Đóng cấu hình video"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              <div>
+                <label className="block mb-1.5 font-bold text-slate-200">Link cuộc trò chuyện / GPT phân tích sản phẩm</label>
+                <input
+                  type="url"
+                  value={videoSettingsDraft.chatgptUrl}
+                  onChange={(event) => setVideoSettingsDraft((current) => ({ ...current, chatgptUrl: event.target.value }))}
+                  placeholder="https://chatgpt.com/ hoặc link GPT riêng"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-white outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block mb-1.5 font-bold text-slate-200">Link dự án Google Flow</label>
+                <input
+                  type="url"
+                  value={videoSettingsDraft.flowUrl}
+                  onChange={(event) => setVideoSettingsDraft((current) => ({ ...current, flowUrl: event.target.value }))}
+                  placeholder="https://labs.google/fx/tools/flow/..."
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-white outline-none focus:border-cyan-500"
+                />
+                <p className="mt-1 text-[10px] text-slate-500">Có thể dán link dự án Flow đang dùng; nếu là trang chính, extension sẽ tự mở dự án.</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block mb-1.5 font-bold text-slate-200">Ảnh tham chiếu</label>
+                  <select
+                    value={videoSettingsDraft.referenceMode}
+                    onChange={(event) => setVideoSettingsDraft((current) => ({
+                      ...current,
+                      referenceMode: event.target.value === 'frame' ? 'frame' : 'ingredient',
+                    }))}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-white outline-none focus:border-cyan-500"
+                  >
+                    <option value="ingredient">Thành phần</option>
+                    <option value="frame">Khung hình</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block mb-1.5 font-bold text-slate-200">Tỷ lệ video</label>
+                  <select
+                    value={videoSettingsDraft.aspectRatio}
+                    onChange={(event) => setVideoSettingsDraft((current) => ({
+                      ...current,
+                      aspectRatio: event.target.value === '16:9' ? '16:9' : '9:16',
+                    }))}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-white outline-none focus:border-cyan-500"
+                  >
+                    <option value="9:16">9:16 dọc</option>
+                    <option value="16:9">16:9 ngang</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block mb-1.5 font-bold text-slate-200">Thời lượng</label>
+                  <select
+                    value={videoSettingsDraft.duration}
+                    onChange={(event) => setVideoSettingsDraft((current) => ({
+                      ...current,
+                      duration: Number(event.target.value) as VideoFlowSettings['duration'],
+                    }))}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-white outline-none focus:border-cyan-500"
+                  >
+                    {[4, 6, 8, 10].map((seconds) => <option key={seconds} value={seconds}>{seconds} giây</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-cyan-500/30 bg-cyan-950/30 px-3 py-3 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-cyan-100">Cấu hình sẽ gửi sang Flow</div>
+                  <div className="mt-0.5 text-[10px] text-cyan-300/80">
+                    Video · {videoSettingsDraft.duration}s · {videoSettingsDraft.aspectRatio} · {videoSettingsDraft.referenceMode === 'ingredient' ? 'Thành phần' : 'Khung hình'} · x1
+                  </div>
+                </div>
+                <div className="rounded-lg bg-slate-900 px-2.5 py-1.5 text-[10px] font-bold text-slate-300" title="Cố định một kết quả để tránh tốn credit">
+                  Số kết quả: 1
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={() => setVideoSettingsOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold hover:bg-slate-700"
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={handleSaveVideoSettings}
+                  className="flex-1 py-2.5 rounded-xl bg-cyan-600 text-white font-extrabold hover:bg-cyan-500 shadow-lg shadow-cyan-950/50"
+                >
+                  Lưu cấu hình
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add To Collection Modal */}
       <AddToCollectionModal
         isOpen={isAddToColOpen}
@@ -1554,6 +1775,11 @@ function LibraryContent() {
               <span>🎬 Đang Tạo Video AI</span>
             </div>
             <div className="text-xs text-slate-400 truncate">{videoProductName}</div>
+            <div className="rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-[10px] text-slate-300">
+              Thiết lập yêu cầu: Video · {videoPipelineState?.requestedFlowOptions?.duration ?? videoFlowSettings.duration}s ·{' '}
+              {videoPipelineState?.requestedFlowOptions?.aspectRatio ?? videoFlowSettings.aspectRatio} ·{' '}
+              {(videoPipelineState?.requestedFlowOptions?.referenceMode ?? videoFlowSettings.referenceMode) === 'ingredient' ? 'Thành phần' : 'Khung hình'} · x1
+            </div>
             {videoPipelineState?.productDetailsStatus === 'done' && videoPipelineState?.productDetails && (
               <div className={`rounded-lg border px-3 py-2 text-[10px] ${
                 videoPipelineState.productDetails.warning

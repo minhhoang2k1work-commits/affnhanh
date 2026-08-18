@@ -23,7 +23,7 @@ async function ensurePaired() {
     const response = await fetch(`${serverUrl}/api/extension/pair`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceToken, extensionVersion: '1.4.3' }),
+      body: JSON.stringify({ deviceToken, extensionVersion: '1.5.0' }),
     });
     const data = await response.json();
     if (data.deviceToken) {
@@ -580,6 +580,13 @@ async function runVideoBrowserPipeline(payload, controller, options = {}) {
   const startIndex = Math.max(0, order.indexOf(options.startStep || 'analyze'));
   let currentStep = order[startIndex];
   let analysisPrompt = '';
+  const requestedDuration = Number(payload.flowOptions?.duration);
+  const requestedFlowOptions = {
+    referenceMode: payload.flowOptions?.referenceMode === 'frame' ? 'frame' : 'ingredient',
+    aspectRatio: payload.flowOptions?.aspectRatio === '16:9' ? '16:9' : '9:16',
+    duration: [4, 6, 8, 10].includes(requestedDuration) ? requestedDuration : 8,
+    outputCount: 1,
+  };
 
   try {
     await updateVideoState({
@@ -600,6 +607,7 @@ async function runVideoBrowserPipeline(payload, controller, options = {}) {
       recoveryUrl: null,
       mergeError: null,
       error: null,
+      requestedFlowOptions,
     });
 
     if (startIndex <= 0) {
@@ -664,6 +672,7 @@ async function runVideoBrowserPipeline(payload, controller, options = {}) {
       await updateVideoState({
         video1Status: 'done', progress: 55, statusText: 'Video 1 đã hoàn thành trên Flow.',
         resultLinks: [artifacts.video1.resultPageUrl].filter(Boolean),
+        appliedFlowOptions: artifacts.video1.videoOptions || requestedFlowOptions,
       });
     }
 

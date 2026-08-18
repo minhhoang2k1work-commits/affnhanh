@@ -193,9 +193,11 @@ function findConfigOption(menu, pattern) {
 }
 
 function isConfigOptionSelected(option) {
+  const dataState = (option?.getAttribute('data-state') || '').trim().toLowerCase();
   return option?.getAttribute('aria-selected') === 'true' ||
     option?.getAttribute('aria-checked') === 'true' ||
-    /active|checked|selected/i.test(option?.getAttribute('data-state') || '');
+    option?.getAttribute('aria-pressed') === 'true' ||
+    ['active', 'checked', 'selected', 'on'].includes(dataState);
 }
 
 function findVideoConfigMenu() {

@@ -380,23 +380,139 @@ async function urlToFile(urlOrBase64, filename = 'aff-product-reference.jpg') {
   return new File([blob], filename, { type: blob.type || 'image/jpeg' });
 }
 
-function setPrompt(promptText) {
+function selectPromptContents(input) {
+  input.focus();
+  if (input instanceof HTMLTextAreaElement || input instanceof HTMLInputElement) {
+    input.select();
+    return;
+  }
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(input);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function getElementCenter(element) {
+  const rect = element.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top + Math.min(rect.height / 2, 24) };
+}
+
+function readPromptText(input) {
+  if (input instanceof HTMLTextAreaElement || input instanceof HTMLInputElement) return input.value || '';
+  const clone = input.cloneNode(true);
+  clone.querySelectorAll('[data-slate-placeholder="true"]').forEach((node) => node.remove());
+  return (clone.textContent || '').replace(/\uFEFF/g, '').trim();
+}
+
+function getComposerDiagnostics() {
+  const composer = getComposerContext();
+  if (!composer) return { composerFound: false };
+  const renderButton = findButtonBySymbol(composer.container, 'arrow_forward');
+  const promptText = readPromptText(composer.input);
+  return {
+    composerFound: true,
+    editor: composer.input.tagName.toLowerCase(),
+    slate: composer.input.getAttribute('data-slate-editor') === 'true',
+    promptLength: promptText.length,
+    focused: document.activeElement === composer.input || composer.input.contains(document.activeElement),
+    referenceCount: countComposerReferences(),
+    renderFound: Boolean(renderButton),
+    renderDisabled: Boolean(renderButton?.disabled),
+    renderAriaDisabled: renderButton?.getAttribute('aria-disabled') || null,
+    renderEnabled: Boolean(renderButton && !renderButton.disabled && renderButton.getAttribute('aria-disabled') !== 'true'),
+  };
+}
+
+function diagnosticSummary(diagnostics) {
+  return [
+    `editor=${diagnostics.editor || 'none'}`,
+    `slate=${Boolean(diagnostics.slate)}`,
+    `prompt=${diagnostics.promptLength || 0}`,
+    `ảnh=${diagnostics.referenceCount || 0}`,
+    `focus=${Boolean(diagnostics.focused)}`,
+    `nút=${diagnostics.renderFound ? (diagnostics.renderEnabled ? 'ready' : 'disabled') : 'missing'}`,
+    `aria=${diagnostics.renderAriaDisabled || 'null'}`,
+  ].join(', ');
+}
+
+async function trustedElementClick(element) {
+  element.scrollIntoView({ block: 'center', inline: 'center' });
+  await sleep(80);
+  const { x, y } = getElementCenter(element);
+  try {
+    const result = await chrome.runtime.sendMessage({ action: 'FLOW_TRUSTED_CLICK', x, y });
+    if (result?.ok) return result;
+    console.warn('[AFF HUB] Trusted click unavailable, using DOM fallback:', result?.error);
+  } catch (error) {
+    console.warn('[AFF HUB] Trusted click failed, using DOM fallback:', error.message);
+  }
+  interactionClick(element);
+  return { ok: true, method: 'dom-click-fallback' };
+}
+
+async function setPrompt(promptText, { requireReady = true } = {}) {
+  let lastTrustedError = '';
+  const initialComposer = await waitForComposer();
+  const isSlateEditor = initialComposer.input.getAttribute('data-slate-editor') === 'true';
+  const modes = requireReady && isSlateEditor
+    ? ['paste-native', 'paste-command']
+    : requireReady
+      ? ['paste-native', 'character']
+      : ['paste-native'];
+  for (const mode of modes) {
+    const composer = await waitForComposer();
+    const point = getElementCenter(composer.input);
+    try {
+      const trustedResult = await chrome.runtime.sendMessage({
+        action: mode.startsWith('paste-') ? 'FLOW_CLIPBOARD_PASTE' : 'FLOW_TRUSTED_INPUT',
+        text: promptText,
+        x: point.x,
+        y: point.y,
+        mode: mode === 'paste-command' ? 'command' : mode === 'paste-native' ? 'native' : mode,
+      });
+      if (!trustedResult?.ok) {
+        lastTrustedError = trustedResult?.error || 'Chrome debugger không phản hồi.';
+        console.warn('[AFF HUB] Trusted prompt input unavailable:', lastTrustedError);
+        continue;
+      }
+      await sleep(mode === 'character' ? 700 : 650);
+      const diagnostics = getComposerDiagnostics();
+      if (diagnostics.promptLength > 0 && (!requireReady || diagnostics.renderEnabled)) {
+        return { method: trustedResult.method || 'trusted-input', diagnostics };
+      }
+      console.warn('[AFF HUB] Flow did not accept trusted prompt state:', diagnosticSummary(diagnostics));
+    } catch (error) {
+      lastTrustedError = error.message;
+      console.warn('[AFF HUB] Trusted prompt input failed:', error.message);
+      break;
+    }
+  }
+
   const composer = getComposerContext();
   if (!composer) throw new Error('Không tìm thấy ô prompt Google Flow.');
   const input = composer.input;
-  input.focus();
+
+  if (input.getAttribute('data-slate-editor') === 'true') {
+    const selection = window.getSelection();
+    if (selection?.rangeCount) selection.collapseToEnd();
+    const diagnostics = getComposerDiagnostics();
+    const debuggerDetail = lastTrustedError ? ` Debugger: ${lastTrustedError}` : '';
+    throw new Error(
+      `CLIPBOARD_PASTE_REJECTED: Flow chưa nhận thao tác dán thật (${diagnosticSummary(diagnostics)}). ` +
+      `Prompt vẫn đang nằm trong clipboard; hãy click ô lệnh và nhấn Ctrl+V thủ công.${debuggerDetail}`,
+    );
+  }
+
+  selectPromptContents(input);
   if (input instanceof HTMLTextAreaElement || input instanceof HTMLInputElement) {
     const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
     if (setter) setter.call(input, promptText);
     else input.value = promptText;
   } else {
-    const selection = window.getSelection();
     const selectEditorContents = () => {
-      const range = document.createRange();
-      range.selectNodeContents(input);
-      selection.removeAllRanges();
-      selection.addRange(range);
+      selectPromptContents(input);
     };
     selectEditorContents();
     document.execCommand('delete', false);
@@ -423,6 +539,13 @@ function setPrompt(promptText) {
   }
   input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: promptText }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
+  await sleep(250);
+  const diagnostics = getComposerDiagnostics();
+  if (requireReady && !diagnostics.renderEnabled) {
+    const debuggerDetail = lastTrustedError ? ` Debugger: ${lastTrustedError}` : '';
+    throw new Error(`PROMPT_STATE_REJECTED: Flow hiển thị chữ nhưng chưa ghi nhận câu lệnh (${diagnosticSummary(diagnostics)}).${debuggerDetail}`);
+  }
+  return { method: 'dom-fallback', diagnostics };
 }
 
 function countComposerReferences() {
@@ -588,6 +711,7 @@ async function waitForNewVideoResult(previousUrls, timeout = 900000) {
 }
 
 async function clickRenderButton(promptText) {
+  let lastDiagnostics = getComposerDiagnostics();
   for (let attempt = 1; attempt <= 3; attempt++) {
     const startedAt = Date.now();
     while (Date.now() - startedAt < 25000) {
@@ -596,20 +720,37 @@ async function clickRenderButton(promptText) {
       const renderButton = findButtonBySymbol(composer.container, 'arrow_forward');
       if (!renderButton) throw new Error('Không tìm thấy nút mũi tên Tạo video.');
       if (!renderButton.disabled && renderButton.getAttribute('aria-disabled') !== 'true') {
-        interactionClick(renderButton);
-        await sleep(1200);
-        const promptAlert = findPromptRequiredAlert();
-        if (!promptAlert) return;
+        const beforeClick = getComposerDiagnostics();
+        await trustedElementClick(renderButton);
+        const evidenceStartedAt = Date.now();
+        while (Date.now() - evidenceStartedAt < 8000) {
+          await sleep(350);
+          const promptAlert = findPromptRequiredAlert();
+          if (promptAlert) {
+            findInteractiveByText(/đóng|close/i, promptAlert)?.click();
+            break;
+          }
+          const generationError = findVisibleGenerationError();
+          if (generationError) throw new Error(`Google Flow: ${generationError}`);
+          const afterClick = getComposerDiagnostics();
+          lastDiagnostics = afterClick;
+          const promptWasConsumed = afterClick.composerFound && afterClick.promptLength < beforeClick.promptLength;
+          const buttonBecameBusy = afterClick.composerFound && !afterClick.renderEnabled;
+          const composerClosed = !afterClick.composerFound;
+          const visibleProgress = [...document.querySelectorAll('[role="status"], [aria-live="polite"]')]
+            .some((element) => isVisible(element) && /đang tạo|đang xử lý|generating|processing|queued|rendering/i.test(elementText(element)));
+          if (promptWasConsumed || buttonBecameBusy || composerClosed || visibleProgress) return;
+        }
 
-        findInteractiveByText(/đóng|close/i, promptAlert)?.click();
-        setPrompt(promptText);
-        await sleep(700);
+        await setPrompt(promptText, { requireReady: true });
+        await sleep(500);
         break;
       }
+      lastDiagnostics = getComposerDiagnostics();
       await sleep(400);
     }
   }
-  throw new Error('PROMPT_INPUT_FAILED: Flow vẫn coi câu lệnh là trống sau 3 lần nhập lại.');
+  throw new Error(`FLOW_SUBMIT_FAILED: Flow không ghi nhận thao tác bấm Tạo sau 3 lần (${diagnosticSummary(lastDiagnostics)}).`);
 }
 
 function bytesToBase64(bytes) {
@@ -692,11 +833,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       await ensureProjectReady();
       const baselineUrls = new Set(collectVideoResultLinks().map((item) => item.url));
       const videoOptions = await configureVideoOrKeepCurrent(message.options || {});
-      setPrompt(message.prompt);
+      await setPrompt(message.prompt, { requireReady: false });
       await sleep(400);
       const reference = await attachReferenceImage(message.imageData);
       await sleep(700);
-      setPrompt(message.prompt);
+      await setPrompt(message.prompt, { requireReady: true });
       await sleep(500);
       await clickRenderButton(message.prompt);
       const result = await waitForNewVideoResult(baselineUrls);
@@ -714,11 +855,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           ? 'PROJECT_REQUIRED'
           : error.message.includes('FLOW_CONFIG_FAILED')
             ? 'FLOW_CONFIG_FAILED'
-            : error.message.includes('PROMPT_INPUT_FAILED')
+            : error.message.includes('PROMPT_INPUT_FAILED') || error.message.includes('PROMPT_STATE_REJECTED') || error.message.includes('CLIPBOARD_PASTE_REJECTED')
               ? 'PROMPT_INPUT_FAILED'
-              : error.message.includes('REFERENCE_UPLOAD_FAILED')
-                ? 'REFERENCE_UPLOAD_FAILED'
-                : undefined;
+              : error.message.includes('FLOW_SUBMIT_FAILED')
+                ? 'FLOW_SUBMIT_FAILED'
+                : error.message.includes('REFERENCE_UPLOAD_FAILED')
+                  ? 'REFERENCE_UPLOAD_FAILED'
+                  : undefined;
       sendResponse({
         success: false,
         code,

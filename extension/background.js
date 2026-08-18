@@ -23,7 +23,7 @@ async function ensurePaired() {
     const response = await fetch(`${serverUrl}/api/extension/pair`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceToken, extensionVersion: '1.5.3' }),
+      body: JSON.stringify({ deviceToken, extensionVersion: '1.8.1' }),
     });
     const data = await response.json();
     if (data.deviceToken) {
@@ -125,9 +125,184 @@ async function startCommissionLookupJob(job) {
   }, 4);
 }
 
+async function withTrustedFlowInput(tabId, operation) {
+  if (!tabId) return { ok: false, error: 'Không xác định được tab Google Flow.' };
+  const target = { tabId };
+  let attached = false;
+  try {
+    await chrome.debugger.attach(target, '1.3');
+    attached = true;
+    return await operation(target);
+  } catch (error) {
+    const message = error?.message || String(error);
+    const hint = /already attached|another debugger|target is being debugged/i.test(message)
+      ? ' Hãy đóng DevTools và tắt extension tự động Flow khác trên tab này.'
+      : '';
+    return { ok: false, error: `${message}${hint}` };
+  } finally {
+    if (attached) await chrome.debugger.detach(target).catch(() => {});
+  }
+}
+
+async function dispatchTrustedMouseClick(target, x, y) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+  await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+    type: 'mouseMoved', x, y, button: 'none', buttons: 0,
+  });
+  await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+    type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1,
+  });
+  await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1,
+  });
+}
+
+let offscreenDocumentPromise = null;
+
+async function ensureOffscreenClipboardDocument() {
+  if (await chrome.offscreen.hasDocument()) return;
+  if (!offscreenDocumentPromise) {
+    offscreenDocumentPromise = chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['CLIPBOARD'],
+      justification: 'Paste video prompts into the Google Flow Slate editor.',
+    }).finally(() => {
+      offscreenDocumentPromise = null;
+    });
+  }
+  await offscreenDocumentPromise;
+}
+
+async function writePromptToClipboard(text) {
+  await ensureOffscreenClipboardDocument();
+  const result = await chrome.runtime.sendMessage({
+    target: 'aff-offscreen',
+    action: 'WRITE_CLIPBOARD',
+    text,
+  });
+  if (!result?.ok) throw new Error(result?.error || 'Không ghi được prompt vào clipboard.');
+  return result;
+}
+
+async function pasteTrustedText(tabId, text, x, y, mode = 'native') {
+  if (typeof text !== 'string' || !text.trim()) return { ok: false, error: 'Câu lệnh trống.' };
+  if (text.length > 30000) return { ok: false, error: 'Câu lệnh dài quá 30.000 ký tự.' };
+
+  try {
+    await writePromptToClipboard(text);
+  } catch (error) {
+    return { ok: false, error: `CLIPBOARD_WRITE_FAILED: ${error?.message || String(error)}` };
+  }
+
+  return withTrustedFlowInput(tabId, async (target) => {
+    await dispatchTrustedMouseClick(target, x, y);
+    await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+      type: 'rawKeyDown', key: 'a', code: 'KeyA', modifiers: 2,
+      windowsVirtualKeyCode: 65, commands: ['selectAll'],
+    });
+    await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+      type: 'keyUp', key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65,
+    });
+    const pasteKeyDown = {
+      type: 'rawKeyDown', key: 'v', code: 'KeyV', modifiers: 2,
+      windowsVirtualKeyCode: 86,
+    };
+    if (mode === 'command') pasteKeyDown.commands = ['paste'];
+    await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', pasteKeyDown);
+    await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+      type: 'keyUp', key: 'v', code: 'KeyV', modifiers: 2, windowsVirtualKeyCode: 86,
+    });
+    await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+      type: 'rawKeyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39,
+    });
+    await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+      type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39,
+    });
+    return { ok: true, method: `chrome-debugger-clipboard-paste-${mode}`, length: text.length };
+  });
+}
+
+async function insertTrustedText(tabId, text, x, y, mode = 'chunk') {
+  if (typeof text !== 'string' || !text.trim()) return { ok: false, error: 'Câu lệnh trống.' };
+  if (text.length > 30000) return { ok: false, error: 'Câu lệnh dài quá 30.000 ký tự.' };
+
+  return withTrustedFlowInput(tabId, async (target) => {
+    await dispatchTrustedMouseClick(target, x, y);
+    await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+      type: 'rawKeyDown', key: 'a', code: 'KeyA', modifiers: 2,
+      windowsVirtualKeyCode: 65, commands: ['selectAll'],
+    });
+    await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+      type: 'keyUp', key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65,
+    });
+    await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+      type: 'rawKeyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8,
+    });
+    await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+      type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8,
+    });
+
+    let eventCount = 0;
+    const lines = text.replace(/\r\n?/g, '\n').split('\n');
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const characters = Array.from(lines[lineIndex]);
+      const chunkSize = mode === 'character' ? 1 : 96;
+      for (let offset = 0; offset < characters.length; offset += chunkSize) {
+        const chunk = characters.slice(offset, offset + chunkSize).join('');
+        await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+          type: 'char', key: 'Unidentified', text: chunk, unmodifiedText: chunk,
+        });
+        eventCount += 1;
+      }
+      if (lineIndex < lines.length - 1) {
+        await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+          type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13,
+        });
+        await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+          type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13,
+        });
+        eventCount += 1;
+      }
+    }
+    return { ok: true, method: `chrome-debugger-keyboard-${mode}`, eventCount };
+  });
+}
+
+async function clickTrustedPoint(tabId, x, y) {
+  return withTrustedFlowInput(tabId, async (target) => {
+    await dispatchTrustedMouseClick(target, x, y);
+    return { ok: true, method: 'chrome-debugger-mouse' };
+  });
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     const { serverUrl } = await getConfig();
+    if (message.action === 'FLOW_CLIPBOARD_PASTE') {
+      return sendResponse(await pasteTrustedText(
+        sender.tab?.id,
+        message.text,
+        Number(message.x),
+        Number(message.y),
+        message.mode,
+      ));
+    }
+    if (message.action === 'FLOW_TRUSTED_INPUT') {
+      return sendResponse(await insertTrustedText(
+        sender.tab?.id,
+        message.text,
+        Number(message.x),
+        Number(message.y),
+        message.mode,
+      ));
+    }
+    if (message.action === 'FLOW_TRUSTED_CLICK') {
+      return sendResponse(await clickTrustedPoint(
+        sender.tab?.id,
+        Number(message.x),
+        Number(message.y),
+      ));
+    }
     if (message.action === 'SYNC_SERVER_URL' && message.serverUrl) {
       await chrome.storage.local.set({ serverUrl: message.serverUrl, userSetServer: true });
       await ensurePaired();

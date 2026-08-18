@@ -12,7 +12,7 @@
   if (!isMarketplace) {
     const currentOrigin = window.location.origin;
     chrome.runtime.sendMessage({ action: 'SYNC_SERVER_URL', serverUrl: currentOrigin });
-    window.postMessage({ type: 'AFF_EXTENSION_INSTALLED', version: '1.3.0', status: 'ready' }, '*');
+    window.postMessage({ type: 'AFF_EXTENSION_INSTALLED', version: '1.4.0', status: 'ready' }, '*');
     document.documentElement.setAttribute('data-aff-extension-installed', 'true');
     console.log('[AFF HUB Extension] Auto-paired with web app origin:', currentOrigin);
 
@@ -32,6 +32,7 @@
             flowOptions: event.data.flowOptions,
             productId: event.data.productId,
             productName: event.data.productName,
+            productContext: event.data.productContext,
           }
         }, (res) => {
           window.postMessage({
@@ -249,8 +250,171 @@
     } else if (message.action === 'COMMISSION_LOOKUP') {
       handleCommissionLookup(message.lookupId, message.payload);
       sendResponse({ processing: true });
+    } else if (message.action === 'AFF_EXTRACT_PRODUCT_DETAILS') {
+      extractMarketplaceProductDetailsWithWait()
+        .then((details) => sendResponse({ success: true, details }))
+        .catch((error) => sendResponse({ success: false, error: error.message }));
+      return true;
     }
   });
+
+  function cleanMarketplaceText(value, maxLength = 4000) {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+  }
+
+  function firstMetaContent(selectors) {
+    for (const selector of selectors) {
+      const value = document.querySelector(selector)?.getAttribute('content');
+      if (value) return cleanMarketplaceText(value);
+    }
+    return '';
+  }
+
+  function firstElementText(selectors, maxLength = 4000) {
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      const value = element?.innerText || element?.textContent;
+      if (value) return cleanMarketplaceText(value, maxLength);
+    }
+    return '';
+  }
+
+  function parseMarketplaceNumber(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    const text = String(value || '').trim().toLowerCase().replace(/\s/g, '');
+    const match = text.match(/([\d.,]+)\s*([km])?/i);
+    if (!match) return null;
+    let amount = Number(match[1].replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.'));
+    if (!Number.isFinite(amount)) return null;
+    if (match[2] === 'k') amount *= 1000;
+    if (match[2] === 'm') amount *= 1000000;
+    return Math.round(amount * 100) / 100;
+  }
+
+  function findProductJsonLd() {
+    const queue = [];
+    document.querySelectorAll('script[type="application/ld+json"]').forEach((script) => {
+      try {
+        const parsed = JSON.parse(script.textContent || 'null');
+        queue.push(...(Array.isArray(parsed) ? parsed : [parsed]));
+      } catch {}
+    });
+    while (queue.length) {
+      const item = queue.shift();
+      if (!item || typeof item !== 'object') continue;
+      const types = Array.isArray(item['@type']) ? item['@type'] : [item['@type']];
+      if (types.some((type) => String(type).toLowerCase() === 'product')) return item;
+      if (Array.isArray(item['@graph'])) queue.push(...item['@graph']);
+    }
+    return null;
+  }
+
+  function marketplaceSection(pageText, startPattern, endPattern, maxLength = 4000) {
+    const start = pageText.search(startPattern);
+    if (start < 0) return '';
+    const remainder = pageText.slice(start);
+    const headingEnd = remainder.indexOf('\n');
+    const content = headingEnd >= 0 ? remainder.slice(headingEnd + 1) : remainder;
+    const end = content.search(endPattern);
+    return cleanMarketplaceText(end >= 0 ? content.slice(0, end) : content, maxLength);
+  }
+
+  function marketplaceDetailsSnapshot() {
+    const jsonProduct = findProductJsonLd() || {};
+    const offer = Array.isArray(jsonProduct.offers) ? jsonProduct.offers[0] || {} : jsonProduct.offers || {};
+    const ratingData = jsonProduct.aggregateRating || {};
+    const bodyText = document.body?.innerText || '';
+    const soldMatch = bodyText.match(/(?:đã bán|sold)\s*([\d.,]+\s*[km]?)/i);
+    const stockMatch = bodyText.match(/(?:kho|stock|còn lại)[:\s]*([\d.,]+)/i);
+    const breadcrumbItems = [...document.querySelectorAll(
+      'nav[aria-label*="breadcrumb" i] a, [data-testid*="breadcrumb" i] a, [class*="breadcrumb"] a, [class*="breadcrumb"] span',
+    )]
+      .map((element) => cleanMarketplaceText(element.textContent, 100))
+      .filter(Boolean)
+      .slice(-6);
+    const additionalProperties = (Array.isArray(jsonProduct.additionalProperty) ? jsonProduct.additionalProperty : [])
+      .slice(0, 20)
+      .map((item) => ({ name: cleanMarketplaceText(item?.name, 100), value: cleanMarketplaceText(item?.value, 300) }))
+      .filter((item) => item.name && item.value);
+    const title = cleanMarketplaceText(
+      jsonProduct.name ||
+      firstMetaContent(['meta[property="og:title"]', 'meta[name="twitter:title"]']) ||
+      firstElementText(['h1', '[data-e2e="product-title"]', '[class*="product-title"]', '[class*="product_name"]']),
+      500,
+    );
+    const descriptionSection = marketplaceSection(
+      bodyText,
+      /(?:mô tả sản phẩm|product description|description)/i,
+      /(?:đánh giá sản phẩm|product reviews?|customer reviews?|sản phẩm tương tự|you may also like)/i,
+      5000,
+    );
+    const detailText = marketplaceSection(
+      bodyText,
+      /(?:chi tiết sản phẩm|thông tin sản phẩm|product details?|specifications?)/i,
+      /(?:mô tả sản phẩm|product description|đánh giá sản phẩm|product reviews?)/i,
+      3500,
+    );
+    const description = cleanMarketplaceText(
+      jsonProduct.description ||
+      firstElementText([
+        '[data-testid="product-description"]', '[data-e2e="product-description"]',
+        '[class*="product-description"]', '[class*="product_detail"]', '[class*="product-detail"]',
+      ]) || descriptionSection ||
+      firstMetaContent(['meta[property="og:description"]', 'meta[name="description"]']),
+      5000,
+    );
+    const brand = typeof jsonProduct.brand === 'object' ? jsonProduct.brand?.name : jsonProduct.brand;
+    const seller = offer.seller || jsonProduct.seller || {};
+    const priceText = offer.price || offer.lowPrice || firstMetaContent([
+      'meta[property="product:price:amount"]', 'meta[itemprop="price"]',
+    ]);
+    return {
+      source: 'marketplace_live_page',
+      capturedAt: new Date().toISOString(),
+      platform: isTikTok ? 'TIKTOK' : isShopee ? 'SHOPEE' : location.hostname,
+      url: document.querySelector('link[rel="canonical"]')?.href || location.href,
+      name: title,
+      description,
+      detailText,
+      brand: cleanMarketplaceText(brand, 200),
+      sku: cleanMarketplaceText(jsonProduct.sku || jsonProduct.productID, 150),
+      price: parseMarketplaceNumber(priceText),
+      currency: cleanMarketplaceText(offer.priceCurrency || firstMetaContent(['meta[property="product:price:currency"]']), 20),
+      availability: cleanMarketplaceText(offer.availability, 150),
+      rating: parseMarketplaceNumber(ratingData.ratingValue || firstMetaContent(['meta[itemprop="ratingValue"]'])),
+      reviewCount: parseMarketplaceNumber(ratingData.reviewCount || ratingData.ratingCount),
+      sold: parseMarketplaceNumber(soldMatch?.[1]),
+      stock: parseMarketplaceNumber(stockMatch?.[1]),
+      shopName: cleanMarketplaceText(seller.name || firstElementText([
+        '[data-e2e="seller-name"]', '[class*="shop-name"]', '[class*="seller-name"]',
+      ]), 300),
+      categoryPath: breadcrumbItems,
+      specifications: additionalProperties,
+      variants: [...new Set([...document.querySelectorAll(
+        '[class*="variation"] button, [class*="variation"] [role="button"], [class*="sku"] button, [class*="sku"] [role="button"]',
+      )].map((element) => cleanMarketplaceText(element.textContent, 120)).filter(Boolean))].slice(0, 30),
+    };
+  }
+
+  async function extractMarketplaceProductDetailsWithWait() {
+    const pageText = document.body?.innerText || '';
+    if (/login required|log in to continue|cần đăng nhập|đăng nhập để tiếp tục/i.test(pageText)) {
+      throw new Error('MARKETPLACE_AUTH_REQUIRED: Cần đăng nhập sàn để đọc mô tả chi tiết.');
+    }
+    if (/captcha|xác minh|verify you are human/i.test(pageText)) {
+      throw new Error('MARKETPLACE_VERIFICATION_REQUIRED: Sàn yêu cầu xác minh.');
+    }
+    const startedAt = Date.now();
+    let details = marketplaceDetailsSnapshot();
+    while (Date.now() - startedAt < 12000 && !details.name) {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      details = marketplaceDetailsSnapshot();
+    }
+    if (!details.name && !details.description) {
+      throw new Error('Không đọc được tên hoặc mô tả sản phẩm từ trang sàn.');
+    }
+    return details;
+  }
 
   // Extract Shop Header Info
   function extractShopInfo() {

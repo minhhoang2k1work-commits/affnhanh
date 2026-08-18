@@ -310,6 +310,7 @@
     <div class="card">
       <div class="card-title">ẢNH SẢN PHẨM</div>
       <input id="videoImageUrl" type="text" placeholder="Paste URL ảnh sản phẩm..." />
+      <input id="videoProductUrl" type="text" placeholder="Link sản phẩm Shopee/TikTok (để lấy mô tả chi tiết)" />
       <div class="upload-area" id="uploadArea">
         <span>📷 Hoặc kéo thả ảnh vào đây</span>
       </div>
@@ -385,7 +386,7 @@
       <div class="card">
         <div class="card-title">TIẾN TRÌNH</div>
         <div id="progressSteps">
-          <div class="progress-step" id="step-analyze">⏳ Bước 1: Phân tích ảnh trên ChatGPT</div>
+          <div class="progress-step" id="step-analyze">⏳ Bước 1: Lấy chi tiết sàn & phân tích ảnh</div>
           <div class="progress-step" id="step-prompt">⏳ Bước 2: Tách prompt video</div>
           <div class="progress-step" id="step-video1">⏳ Bước 3: Tạo video 1 trên Google Flow</div>
           <div class="progress-step" id="step-video2">⏳ Bước 4: Tạo video 2 trên Google Flow</div>
@@ -395,6 +396,7 @@
           <div id="progressFill" class="progress-fill"></div>
         </div>
         <div id="progressText" style="font-size: 11px; color: #94a3b8; margin-top: 6px;">Đang khởi tạo...</div>
+        <div id="productDetailsInfo" style="display:none; font-size:10px; color:#67e8f9; margin-top:6px;"></div>
       </div>
     </div>
 
@@ -413,7 +415,7 @@
   </div>
 
   <div class="footer">
-    AFF HUB Chrome Extension Bridge v1.3.0
+    AFF HUB Chrome Extension Bridge v1.4.0
   </div>
 
   <script src="popup.js"></script>

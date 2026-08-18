@@ -164,6 +164,23 @@ function LibraryContent() {
       flowUrl,
       productId: product.id,
       productName: product.name,
+      productContext: {
+        id: product.id,
+        externalProductId: product.externalProductId,
+        platform: product.platform || product.shop?.platform,
+        name: product.name,
+        price: product.price,
+        salePrice: product.salePrice,
+        sold: product.sold,
+        rating: product.rating,
+        stock: product.stock,
+        category: product.category,
+        targetCustomer: product.targetCustomer,
+        shopName: product.shop?.name,
+        originalUrl: product.originalUrl,
+        voucherShop: product.voucherShop,
+        voucherPlatform: product.voucherPlatform,
+      },
       flowOptions: {
         referenceMode: 'ingredient',
         aspectRatio: '9:16',
@@ -1537,11 +1554,22 @@ function LibraryContent() {
               <span>🎬 Đang Tạo Video AI</span>
             </div>
             <div className="text-xs text-slate-400 truncate">{videoProductName}</div>
+            {videoPipelineState?.productDetailsStatus === 'done' && videoPipelineState?.productDetails && (
+              <div className={`rounded-lg border px-3 py-2 text-[10px] ${
+                videoPipelineState.productDetails.warning
+                  ? 'border-amber-500/30 bg-amber-900/20 text-amber-200'
+                  : 'border-cyan-500/30 bg-cyan-900/20 text-cyan-200'
+              }`}>
+                {videoPipelineState.productDetails.warning ? '⚠ Dùng dữ liệu đã lưu: ' : '✓ Đã lấy chi tiết sàn: '}
+                {[videoPipelineState.productDetails.name, videoPipelineState.productDetails.brand, videoPipelineState.productDetails.category]
+                  .filter(Boolean).join(' · ')}
+              </div>
+            )}
             
             {/* Step Indicators */}
             <div className="space-y-2 text-xs">
               {[
-                { key: 'analyzeStatus', label: 'Phân tích ảnh trên ChatGPT' },
+                { key: 'analyzeStatus', label: 'Lấy chi tiết sàn & phân tích ảnh' },
                 { key: 'promptStatus', label: 'Tách prompt video' },
                 { key: 'video1Status', label: 'Tạo video 1 trên Google Flow' },
                 { key: 'video2Status', label: 'Tạo video 2 trên Google Flow' },

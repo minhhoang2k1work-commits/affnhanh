@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const stored = await chrome.storage.local.get([
     'deviceToken', 'serverUrl', 'chatgptUrl', 'flowUrl', 'flowReferenceMode',
-    'flowAspectRatio', 'flowDuration', 'videoPipelineState',
+    'flowAspectRatio', 'flowDuration', 'videoProductUrl', 'videoPipelineState',
   ]);
   if (stored.deviceToken) deviceToken.textContent = `Device: ${stored.deviceToken.substring(0, 16)}...`;
   if (stored.serverUrl && serverSelect) serverSelect.value = stored.serverUrl;
@@ -65,6 +65,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   const videoImageUrl = $('videoImageUrl');
+  const videoProductUrl = $('videoProductUrl');
   const uploadArea = $('uploadArea');
   const imagePreview = $('imagePreview');
   const previewImg = $('previewImg');
@@ -84,6 +85,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const videoProgress = $('videoProgress');
   const progressFill = $('progressFill');
   const progressText = $('progressText');
+  const productDetailsInfo = $('productDetailsInfo');
   const videoResult = $('videoResult');
   const resultVideo = $('resultVideo');
   const flowResultLinks = $('flowResultLinks');
@@ -97,6 +99,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   flowReferenceMode.value = stored.flowReferenceMode || 'ingredient';
   flowAspectRatio.value = stored.flowAspectRatio || '9:16';
   flowDuration.value = String(stored.flowDuration || 8);
+  videoProductUrl.value = isMarketplace ? activeTab.url : (stored.videoProductUrl || '');
 
   function validUrl(value, allowedHosts) {
     try {
@@ -176,6 +179,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     progressFill.style.width = `${state.progress || 0}%`;
     progressText.textContent = state.statusText || 'Đang khởi tạo...';
+    if (state.productDetailsStatus === 'done' && state.productDetails) {
+      const details = state.productDetails;
+      const labels = [details.name, details.brand, details.category].filter(Boolean);
+      productDetailsInfo.style.display = 'block';
+      productDetailsInfo.textContent = details.warning
+        ? `⚠ Không đọc được trang sàn, đang dùng dữ liệu thư viện: ${labels.join(' · ')}`
+        : `✓ Đã lấy chi tiết sản phẩm: ${labels.join(' · ')}`;
+    } else {
+      productDetailsInfo.style.display = 'none';
+      productDetailsInfo.textContent = '';
+    }
 
     const isRunning = state.status === 'running' || state.status === 'pausing' || state.status === 'paused';
     generateVideoBtn.style.display = isRunning ? 'none' : 'flex';
@@ -224,6 +238,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const imageData = currentImageData || videoImageUrl.value.trim();
     const chatgpt = chatgptUrl.value.trim();
     const flow = flowUrl.value.trim();
+    const productUrl = videoProductUrl.value.trim();
     const flowOptions = {
       referenceMode: flowReferenceMode.value,
       aspectRatio: flowAspectRatio.value,
@@ -233,6 +248,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!imageData) return alert('Vui lòng chọn ảnh sản phẩm.');
     if (!validUrl(chatgpt, ['chatgpt.com'])) return alert('Link ChatGPT không hợp lệ.');
     if (!validUrl(flow, ['flow.google', 'labs.google'])) return alert('Link Google Flow không hợp lệ.');
+    if (productUrl && !validUrl(productUrl, ['shopee.vn', 'tiktok.com'])) {
+      return alert('Link sản phẩm phải thuộc Shopee hoặc TikTok.');
+    }
 
     await chrome.storage.local.set({
       chatgptUrl: chatgpt,
@@ -240,6 +258,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       flowReferenceMode: flowOptions.referenceMode,
       flowAspectRatio: flowOptions.aspectRatio,
       flowDuration: flowOptions.duration,
+      videoProductUrl: productUrl,
     });
     videoResult.style.display = 'none';
     videoProgress.style.display = 'block';
@@ -251,7 +270,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const response = await sendRuntime({
         action: 'VIDEO_BROWSER_START',
-        payload: { imageData, chatgptUrl: chatgpt, flowUrl: flow, flowOptions },
+        payload: {
+          imageData,
+          chatgptUrl: chatgpt,
+          flowUrl: flow,
+          flowOptions,
+          productUrl,
+          productContext: productUrl ? { originalUrl: productUrl } : {},
+        },
       });
       if (!response.started) throw new Error(response.error || 'Không khởi động được pipeline');
     } catch (error) {
@@ -302,6 +328,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await sendRuntime({ action: 'VIDEO_BROWSER_RESET' }).catch(() => {});
     currentImageData = null;
     videoImageUrl.value = '';
+    videoProductUrl.value = '';
     hidePreview();
     videoResult.style.display = 'none';
     videoProgress.style.display = 'none';

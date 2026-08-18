@@ -23,7 +23,7 @@ async function ensurePaired() {
     const response = await fetch(`${serverUrl}/api/extension/pair`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceToken, extensionVersion: '1.4.0' }),
+      body: JSON.stringify({ deviceToken, extensionVersion: '1.4.3' }),
     });
     const data = await response.json();
     if (data.deviceToken) {
@@ -393,6 +393,11 @@ async function closePipelineTab(tabId, controller) {
   await chrome.tabs.remove(tabId).catch(() => {});
 }
 
+async function keepPipelineTabForInspection(tabId, controller) {
+  controller.activeTabIds.delete(tabId);
+  await chrome.tabs.update(tabId, { active: true }).catch(() => {});
+}
+
 async function closeVideoTabs(controller) {
   const tabIds = [...(controller?.activeTabIds || [])];
   controller?.activeTabIds?.clear();
@@ -422,6 +427,15 @@ function parseVideoPrompts(responseText) {
 function markStepError(step) {
   if (step === 'analyze') return { analyzeStatus: 'error' };
   return { [`${step}Status`]: 'error' };
+}
+
+function isFlowVideoResultUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return /\/edit\/[^/]+/i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
 }
 
 function cleanProductValue(value, maxLength = 5000) {
@@ -583,6 +597,7 @@ async function runVideoBrowserPipeline(payload, controller, options = {}) {
       statusText: startIndex > 0 ? '↻ Đang thử lại từ bước lỗi...' : 'Đang mở ChatGPT...',
       finalVideoUrl: null,
       resultLinks: [artifacts.video1?.resultPageUrl, artifacts.video2?.resultPageUrl].filter(Boolean),
+      recoveryUrl: null,
       mergeError: null,
       error: null,
     });
@@ -605,22 +620,36 @@ async function runVideoBrowserPipeline(payload, controller, options = {}) {
         progress: 8,
         statusText: 'Đã lấy chi tiết sản phẩm. Đang mở ChatGPT...',
       });
-      const chatgptTab = await openPipelineTab(payload.chatgptUrl, controller, false);
+      const chatgptTab = await openPipelineTab(payload.chatgptUrl, controller, true);
       await updateVideoState({ progress: 10, statusText: 'Đang gửi ảnh và yêu cầu sang ChatGPT...' });
       const health = await sendTabMessageWithRetry(chatgptTab.id, { action: 'AFF_PAGE_STATUS' });
       if (!health?.ready) {
-        await chrome.tabs.update(chatgptTab.id, { active: true }).catch(() => {});
+        await keepPipelineTabForInspection(chatgptTab.id, controller);
         throw new Error(health?.message || 'Cần đăng nhập ChatGPT trước khi chạy.');
       }
-      const result = await sendTabMessageWithRetry(chatgptTab.id, {
-        action: 'CHATGPT_ANALYZE',
-        imageData: payload.imageData,
-        prompt: analysisPrompt,
-      });
-      if (!result?.success) throw new Error(result?.error || 'ChatGPT phân tích thất bại.');
-      await closePipelineTab(chatgptTab.id, controller);
+      let result;
+      try {
+        result = await sendTabMessageWithRetry(chatgptTab.id, {
+          action: 'CHATGPT_ANALYZE',
+          imageData: payload.imageData,
+          prompt: analysisPrompt,
+        });
+      } catch (error) {
+        await keepPipelineTabForInspection(chatgptTab.id, controller);
+        throw error;
+      }
+      if (!result?.success) {
+        await keepPipelineTabForInspection(chatgptTab.id, controller);
+        throw new Error(result?.error || 'ChatGPT phân tích thất bại.');
+      }
       await updateVideoState({ analyzeStatus: 'done', promptStatus: 'active', progress: 25, statusText: 'Đang kiểm tra hai prompt...' });
-      Object.assign(artifacts, parseVideoPrompts(result.responseText));
+      try {
+        Object.assign(artifacts, parseVideoPrompts(result.responseText));
+      } catch (error) {
+        await keepPipelineTabForInspection(chatgptTab.id, controller);
+        throw error;
+      }
+      await closePipelineTab(chatgptTab.id, controller);
       lastVideoArtifacts = { ...artifacts };
       await updateVideoState({ promptStatus: 'done', progress: 30, statusText: 'Đã nhận đủ hai prompt video.' });
     }
@@ -712,17 +741,16 @@ async function runVideoBrowserPipeline(payload, controller, options = {}) {
       controller.failedStep = currentStep;
       console.error('[AFF HUB] Pipeline error:', error);
       const previousState = (await chrome.storage.local.get('videoPipelineState')).videoPipelineState || {};
-      const fallbackLinks = [
-        ...(previousState.resultLinks || []),
-        error instanceof FlowGenerationError ? error.fallbackUrl : null,
-      ].filter(Boolean);
+      const confirmedResultLinks = (previousState.resultLinks || []).filter(isFlowVideoResultUrl);
+      const recoveryUrl = error instanceof FlowGenerationError ? error.fallbackUrl : previousState.recoveryUrl || null;
       await updateVideoState({
         status: 'error',
         failedStep: currentStep,
         ...markStepError(currentStep),
         error: error.message,
         statusText: `❌ Lỗi: ${error.message}`,
-        resultLinks: [...new Set(fallbackLinks)],
+        resultLinks: [...new Set(confirmedResultLinks)],
+        recoveryUrl,
       });
       await reportExtensionVideoJob(payload.extensionJobId, null, error.message).catch(() => {});
     }
@@ -733,7 +761,7 @@ async function runVideoBrowserPipeline(payload, controller, options = {}) {
 }
 
 async function generateFlowVideo(flowUrl, imageData, prompt, controller, sequence, flowOptions = {}) {
-  const flowTab = await openPipelineTab(flowUrl || DEFAULT_FLOW_URL, controller, false);
+  const flowTab = await openPipelineTab(flowUrl || DEFAULT_FLOW_URL, controller, true);
   let health = await sendTabMessageWithRetry(flowTab.id, { action: 'AFF_PAGE_STATUS' });
   if (!health?.ready && health?.code === 'AUTH_REQUIRED') {
     controller.activeTabIds.delete(flowTab.id);

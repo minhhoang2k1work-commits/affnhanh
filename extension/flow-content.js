@@ -150,6 +150,117 @@ async function waitForElement(getter, timeout, errorMessage) {
   throw new Error(errorMessage);
 }
 
+function popupContentText(element) {
+  return (element?.innerText || element?.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function findVideoConfigButton(composer) {
+  const candidates = [...composer.container.querySelectorAll('button[aria-haspopup="menu"]')].filter(isVisible);
+  return candidates
+    .map((button) => {
+      const text = `${elementText(button)} ${popupContentText(button)}`;
+      const iconText = [...button.querySelectorAll('i')].map((icon) => icon.textContent || '').join(' ');
+      let score = 0;
+      if (/\bvideo\b|hình ảnh|\bimage\b|nano banana|imagen/i.test(text)) score += 6;
+      if (/\bx[1-4]\b/i.test(text)) score += 5;
+      if (/\b(?:4|6|8|10)s\b/i.test(text)) score += 3;
+      if (/crop_(?:9_16|16_9|free)/i.test(`${text} ${iconText}`)) score += 4;
+      if (button.getAttribute('aria-expanded') === 'true') score += 2;
+      return { button, score };
+    })
+    .filter((item) => item.score >= 6)
+    .sort((left, right) => right.score - left.score)
+    .map((item) => item.button)[0] || null;
+}
+
+function looksLikeVideoConfigMenu(element) {
+  if (!isVisible(element)) return false;
+  const content = popupContentText(element);
+  const hasMediaMode = /\bvideo\b/i.test(content) && /hình ảnh|\bimage\b/i.test(content);
+  const hasReferenceMode = /khung hình|frames?|thành phần|components?|ingredients?/i.test(content);
+  return hasMediaMode && hasReferenceMode && /9:16|16:9|crop_9_16|crop_16_9/i.test(content);
+}
+
+const CONFIG_OPTION_SELECTOR = '[role="tab"], [role="radio"], [role="option"], [role="menuitemradio"], button';
+
+function findConfigOption(menu, pattern) {
+  return [...menu.querySelectorAll(CONFIG_OPTION_SELECTOR)].find((option) => {
+    if (!isVisible(option)) return false;
+    const accessibleText = elementText(option);
+    const contentText = popupContentText(option);
+    return pattern.test(accessibleText) || pattern.test(contentText);
+  }) || null;
+}
+
+function isConfigOptionSelected(option) {
+  return option?.getAttribute('aria-selected') === 'true' ||
+    option?.getAttribute('aria-checked') === 'true' ||
+    /active|checked|selected/i.test(option?.getAttribute('data-state') || '');
+}
+
+function findVideoConfigMenu() {
+  const directCandidates = [...document.querySelectorAll(
+    '[role="menu"], [role="dialog"], [data-state="open"], [data-radix-popper-content-wrapper]',
+  )];
+  const direct = directCandidates.find(looksLikeVideoConfigMenu);
+  if (direct) return direct;
+
+  const videoTabs = [...document.querySelectorAll(CONFIG_OPTION_SELECTOR)]
+    .filter((tab) => isVisible(tab) && /(?:^|\s)video(?:\s|$)/i.test(`${elementText(tab)} ${popupContentText(tab)}`.trim()));
+  for (const videoTab of videoTabs) {
+    let container = videoTab.parentElement;
+    for (let depth = 0; container && container !== document.body && depth < 9; depth++, container = container.parentElement) {
+      if (looksLikeVideoConfigMenu(container)) return container;
+    }
+  }
+  return null;
+}
+
+function interactionClick(element) {
+  element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  element.focus({ preventScroll: true });
+  const pointerOptions = { bubbles: true, cancelable: true, pointerType: 'mouse', isPrimary: true };
+  const mouseOptions = { bubbles: true, cancelable: true, button: 0 };
+  if (typeof PointerEvent === 'function') element.dispatchEvent(new PointerEvent('pointerdown', pointerOptions));
+  element.dispatchEvent(new MouseEvent('mousedown', mouseOptions));
+  if (typeof PointerEvent === 'function') element.dispatchEvent(new PointerEvent('pointerup', pointerOptions));
+  element.dispatchEvent(new MouseEvent('mouseup', mouseOptions));
+  element.click();
+}
+
+async function openVideoConfigMenu(configButton) {
+  const alreadyOpen = findVideoConfigMenu();
+  if (alreadyOpen) return alreadyOpen;
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await waitWhilePaused();
+    interactionClick(configButton);
+    try {
+      return await waitForElement(
+        findVideoConfigMenu,
+        3500,
+        'FLOW_CONFIG_RETRY',
+      );
+    } catch (error) {
+      if (error.message !== 'FLOW_CONFIG_RETRY') throw error;
+      if (configButton.getAttribute('aria-expanded') === 'true') break;
+      await sleep(500);
+    }
+  }
+
+  const visiblePopups = [...document.querySelectorAll('[role="menu"], [role="dialog"], [data-state="open"]')]
+    .filter(isVisible)
+    .map((element) => popupContentText(element).slice(0, 120))
+    .filter(Boolean)
+    .slice(0, 3);
+  const diagnostics = visiblePopups.length ? ` Popup nhìn thấy: ${visiblePopups.join(' / ')}` : '';
+  throw new Error(`FLOW_CONFIG_FAILED: Không mở được menu cấu hình từ nút "${elementText(configButton)}".${diagnostics}`);
+}
+
+function currentVideoConfigMenu(fallback) {
+  return findVideoConfigMenu() || fallback;
+}
+
 async function configureVideo(options = {}) {
   const settings = {
     referenceMode: options.referenceMode === 'frame' ? 'frame' : 'ingredient',
@@ -158,53 +269,68 @@ async function configureVideo(options = {}) {
     outputCount: 1,
   };
   const composer = await waitForComposer();
-  const configButton = [...composer.container.querySelectorAll('button')].find((button) =>
-    button.getAttribute('aria-haspopup') === 'menu' && /video|nano banana|imagen/i.test(elementText(button))
-  );
+  const configButton = findVideoConfigButton(composer);
   if (!configButton) throw new Error('FLOW_CONFIG_FAILED: Không tìm thấy menu cấu hình model.');
-  configButton.click();
+  const menu = await openVideoConfigMenu(configButton);
 
-  const menu = await waitForElement(
-    () => [...document.querySelectorAll('[role="menu"]')].find(isVisible),
-    10000,
-    'FLOW_CONFIG_FAILED: Không mở được menu cấu hình.',
-  );
-
-  const videoTab = findByText(menu.querySelectorAll('[role="tab"]'), /(?:^|\s)video(?:\s|$)/i);
+  const videoTab = findConfigOption(menu, /(?:^|\s)video(?:\s|$)/i);
   if (!videoTab) throw new Error('FLOW_CONFIG_FAILED: Không tìm thấy chế độ Video.');
-  if (videoTab.getAttribute('aria-selected') !== 'true') {
+  if (!isConfigOptionSelected(videoTab)) {
     videoTab.click();
     await sleep(500);
   }
 
-  const currentMenu = [...document.querySelectorAll('[role="menu"]')].find(isVisible) || menu;
+  let currentMenu = currentVideoConfigMenu(menu);
   const referencePattern = settings.referenceMode === 'frame'
     ? /khung hình|frames?/i
     : /thành phần|components?|ingredients?/i;
-  const referenceTab = findByText(currentMenu.querySelectorAll('[role="tab"]'), referencePattern);
+  const referenceTab = findConfigOption(currentMenu, referencePattern);
   if (!referenceTab) throw new Error('FLOW_CONFIG_FAILED: Không tìm thấy chế độ ảnh tham chiếu.');
-  if (referenceTab.getAttribute('aria-selected') !== 'true') {
+  if (!isConfigOptionSelected(referenceTab)) {
     referenceTab.click();
     await sleep(300);
   }
 
+  currentMenu = currentVideoConfigMenu(menu);
   const ratioPattern = settings.aspectRatio === '9:16' ? /(?:crop_9_16\s*)?9:16/i : /(?:crop_16_9\s*)?16:9/i;
-  const ratioTab = findByText(currentMenu.querySelectorAll('[role="tab"]'), ratioPattern);
+  const ratioTab = findConfigOption(currentMenu, ratioPattern);
   if (!ratioTab) throw new Error(`FLOW_CONFIG_FAILED: Không tìm thấy tỷ lệ ${settings.aspectRatio}.`);
-  if (ratioTab.getAttribute('aria-selected') !== 'true') ratioTab.click();
+  if (!isConfigOptionSelected(ratioTab)) {
+    ratioTab.click();
+    await sleep(250);
+  }
 
-  const durationTab = findByText(currentMenu.querySelectorAll('[role="tab"]'), new RegExp(`^${settings.duration}s$`, 'i'));
-  if (durationTab && durationTab.getAttribute('aria-selected') !== 'true') durationTab.click();
+  currentMenu = currentVideoConfigMenu(menu);
+  const durationTab = findConfigOption(currentMenu, new RegExp(`^${settings.duration}s$`, 'i'));
+  if (!durationTab) throw new Error(`FLOW_CONFIG_FAILED: Không tìm thấy thời lượng ${settings.duration}s.`);
+  if (!isConfigOptionSelected(durationTab)) {
+    durationTab.click();
+    await sleep(250);
+  }
 
-  const countTab = findByText(currentMenu.querySelectorAll('[role="tab"]'), new RegExp(`^x${settings.outputCount}$`, 'i'));
+  currentMenu = currentVideoConfigMenu(menu);
+  const countTab = findConfigOption(currentMenu, new RegExp(`^x${settings.outputCount}$`, 'i'));
   if (!countTab) throw new Error(`FLOW_CONFIG_FAILED: Không tìm thấy lựa chọn x${settings.outputCount}.`);
-  if (countTab.getAttribute('aria-selected') !== 'true') countTab.click();
+  if (!isConfigOptionSelected(countTab)) countTab.click();
   await sleep(300);
 
-  configButton.click();
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+  document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape', bubbles: true }));
   await sleep(250);
-  const summary = elementText(configButton);
-  if (!/video/i.test(summary)) throw new Error('FLOW_CONFIG_FAILED: Flow chưa chuyển sang chế độ Video.');
+  let summary = '';
+  await waitForElement(
+    () => {
+      summary = `${elementText(configButton)} ${popupContentText(configButton)}`.replace(/\s+/g, ' ').trim();
+      const ratioReady = settings.aspectRatio === '9:16'
+        ? /9:16|crop_9_16/i.test(summary)
+        : /16:9|crop_16_9/i.test(summary);
+      return /\bvideo\b/i.test(summary) && ratioReady && new RegExp(`\\b${settings.duration}s\\b`, 'i').test(summary) && /\bx1\b/i.test(summary)
+        ? configButton
+        : null;
+    },
+    4000,
+    `FLOW_CONFIG_FAILED: Flow chưa áp dụng đủ cấu hình Video · ${settings.duration}s · ${settings.aspectRatio} · x1.`,
+  );
   return { ...settings, summary };
 }
 

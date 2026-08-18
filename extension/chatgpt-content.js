@@ -5,8 +5,8 @@ const CHATGPT_SELECTORS = {
   fileInput: 'input[type="file"][accept*="image"], input[type="file"]',
   attachButton: 'button[data-testid="attach-button"], button[data-testid="composer-plus-btn"], button[aria-label*="Attach" i], button[aria-label*="Upload" i], button[aria-label*="Add files" i]',
   sendButton: 'button[data-testid="send-button"], button[data-testid="composer-submit-button"], button[aria-label*="Send" i], button[aria-label*="Gửi" i]',
-  stopButton: 'button[data-testid="stop-button"], button[aria-label*="Stop" i], button[aria-label*="Dừng" i]',
-  assistantMessage: 'div[data-message-author-role="assistant"]',
+  stopButton: 'button[data-testid="stop-button"], button[data-testid*="stop" i], button[aria-label*="Stop" i], button[aria-label*="Dừng" i]',
+  assistantMessage: '[data-turn="assistant"], [data-message-author-role="assistant"]',
 };
 
 let operationControl = { cancelled: false, paused: false };
@@ -120,19 +120,36 @@ async function clickSend() {
   }));
 }
 
-async function waitForCompletion(initialMessageCount, timeout = 180000) {
+function visibleChatGPTError() {
+  const messages = [...document.querySelectorAll('[role="alert"], [aria-live="assertive"]')]
+    .filter((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    })
+    .map((element) => (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  return messages.find((text) =>
+    /something went wrong|network error|message limit|try again later|upload failed|không thành công|đã xảy ra lỗi|giới hạn tin nhắn|lỗi mạng/i.test(text)
+  ) || null;
+}
+
+async function waitForCompletion(initialMessageCount, timeout = 480000) {
   const startedAt = Date.now();
   let stableText = '';
   let stableSince = 0;
   while (Date.now() - startedAt < timeout) {
     await waitWhilePaused();
+    const visibleError = visibleChatGPTError();
+    if (visibleError) throw new Error(`ChatGPT: ${visibleError}`);
     const messages = document.querySelectorAll(CHATGPT_SELECTORS.assistantMessage);
     const latest = messages[messages.length - 1];
     const text = latest?.innerText?.trim() || '';
     const generating = Boolean(document.querySelector(CHATGPT_SELECTORS.stopButton));
-    if (messages.length > initialMessageCount && text && !generating) {
+    if (messages.length > initialMessageCount && text) {
       if (text === stableText) {
-        if (Date.now() - stableSince > 1500) return text;
+        const stableFor = Date.now() - stableSince;
+        if (/\[\/PROMPT2\]/i.test(text) && (!generating || stableFor > 1000)) return text;
+        if (!generating && stableFor > 10000) return text;
       } else {
         stableText = text;
         stableSince = Date.now();
@@ -140,7 +157,7 @@ async function waitForCompletion(initialMessageCount, timeout = 180000) {
     }
     await sleep(500);
   }
-  throw new Error('ChatGPT phản hồi quá thời gian 3 phút.');
+  throw new Error('ChatGPT phản hồi quá thời gian 8 phút hoặc chưa trả xong thẻ [/PROMPT2].');
 }
 
 function getPageStatus() {

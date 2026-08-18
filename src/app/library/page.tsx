@@ -1691,6 +1691,18 @@ function LibraryContent() {
               </div>
             )}
 
+            {videoPipelineState?.recoveryUrl && !videoPipelineState?.resultLinks?.includes(videoPipelineState.recoveryUrl) && (
+              <a
+                href={videoPipelineState.recoveryUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full py-2 rounded-xl bg-amber-900/40 border border-amber-500/30 text-amber-200 text-xs font-bold hover:bg-amber-800/50 transition-all"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Mở dự án Flow để kiểm tra lỗi
+              </a>
+            )}
+
           </div>
         </div>
       )}

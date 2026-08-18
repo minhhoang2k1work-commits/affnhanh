@@ -195,7 +195,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     generateVideoBtn.style.display = isRunning ? 'none' : 'flex';
     videoControls.style.display = isRunning ? 'flex' : 'none';
     const resultLinks = [...new Set((state.resultLinks || []).filter(Boolean))];
-    const hasResult = Boolean(state.finalVideoUrl || resultLinks.length);
+    const recoveryUrl = state.recoveryUrl || null;
+    const hasResult = Boolean(state.finalVideoUrl || resultLinks.length || recoveryUrl);
     videoProgress.style.display = isRunning || ['error', 'cancelled', 'completed_with_links'].includes(state.status) ? 'block' : 'none';
     retryVideoBtn.style.display = state.status === 'error' || state.status === 'cancelled' || state.status === 'interrupted' ? 'flex' : 'none';
     pauseVideoBtn.textContent = state.status === 'paused' || state.status === 'pausing' ? '▶ Tiếp tục' : '⏸ Tạm dừng';
@@ -211,6 +212,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       link.textContent = `🎬 Mở video ${index + 1} trên Google Flow`;
       flowResultLinks.appendChild(link);
     });
+    if (recoveryUrl && !resultLinks.includes(recoveryUrl)) {
+      const recoveryLink = document.createElement('a');
+      recoveryLink.className = 'result-link';
+      recoveryLink.href = recoveryUrl;
+      recoveryLink.target = '_blank';
+      recoveryLink.rel = 'noopener noreferrer';
+      recoveryLink.textContent = '🛠 Mở dự án Flow để kiểm tra lỗi';
+      flowResultLinks.appendChild(recoveryLink);
+    }
 
     if (state.finalVideoUrl) {
       videoControls.style.display = 'none';

@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     try {
-      const url = stored.serverUrl || 'http://localhost:3000';
+      const url = stored.serverUrl || 'https://affnhanh.vercel.app';
       const token = stored.deviceToken || 'temp';
       const res = await fetch(`${url}/api/extension/auth/verify`, {
         method: 'POST',
@@ -106,7 +106,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       activateLicenseBtn.textContent = 'Đang xử lý...';
       try {
         const token = stored.deviceToken || 'temp_' + Date.now();
-        const url = stored.serverUrl || 'http://localhost:3000';
+        const url = stored.serverUrl || 'https://affnhanh.vercel.app';
         const res = await fetch(`${url}/api/extension/auth`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

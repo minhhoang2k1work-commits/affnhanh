@@ -1,6 +1,6 @@
 // AFF HUB Chrome Extension - Background Service Worker
 
-const DEFAULT_SERVER = 'http://localhost:3000';
+const DEFAULT_SERVER = 'https://affnhanh.vercel.app';
 const DEFAULT_CHATGPT_URL = 'https://chatgpt.com/';
 const DEFAULT_FLOW_URL = 'https://labs.google/fx/tools/flow';
 

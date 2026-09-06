@@ -43,6 +43,7 @@ const navGroups = [
     items: [
       { name: 'Quét Shop (Scanner)', href: '/scanner', icon: ScanLine, badge: 'Core', highlight: true },
       { name: 'Thư Viện Sản Phẩm', href: '/library', icon: ShoppingBag },
+      { name: 'Ngành Hàng & Prompt', href: '/industries', icon: Boxes, badge: 'Mới' },
       { name: 'Bộ Sưu Tập', href: '/collections', icon: FolderHeart },
       { name: 'Quản Lý Shop', href: '/shops', icon: Store, badge: 'Sync' },
       { name: 'Cài Đặt Shopee', href: '/settings/shopee', icon: Settings, badge: 'Status' },
@@ -66,6 +67,7 @@ const navGroups = [
     icon: Bot,
     accent: true,
     items: [
+      { name: 'Telegram Agent', href: '/telegram', icon: Bot, badge: 'Agent' },
       { name: 'AI Video Studio', href: '/ai-video', icon: Clapperboard, badge: 'AI', highlight: true },
       { name: 'Thư Viện Video', href: '/ai-video/library', icon: Film },
       { name: 'Quy trình tự động hóa', href: '/flows', icon: Workflow, badge: 'Auto' },

@@ -1,5 +1,7 @@
 'use client';
 
+import { isServiceUrl } from '@/lib/products/industry';
+import { ProductKnowledgeButton } from '@/components/collections/ProductKnowledgeButton';
 import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -43,7 +45,9 @@ import {
   Coins,
   Globe,
   Video,
-  Loader2
+  Loader2,
+  Download,
+  ZoomIn
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import { CATEGORY_OPTIONS, TARGET_CUSTOMER_OPTIONS } from '@/lib/constants';
@@ -124,7 +128,7 @@ function LibraryContent() {
   const [maxPriceInput, setMaxPriceInput] = useState<string>('');
   const [minCommInput, setMinCommInput] = useState<string>('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState<boolean>(false);
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>(searchParams.get('category') || 'all');
   const [targetCustomerFilter, setTargetCustomerFilter] = useState<string>('all');
   const [dbCategories, setDbCategories] = useState<string[]>([]);
   const [dbTargetCustomers, setDbTargetCustomers] = useState<string[]>([]);
@@ -148,6 +152,10 @@ function LibraryContent() {
   const [videoSettingsOpen, setVideoSettingsOpen] = useState(false);
   const [videoFlowSettings, setVideoFlowSettings] = useState<VideoFlowSettings>(DEFAULT_VIDEO_FLOW_SETTINGS);
   const [videoSettingsDraft, setVideoSettingsDraft] = useState<VideoFlowSettings>(DEFAULT_VIDEO_FLOW_SETTINGS);
+
+  // Image lightbox state
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [lightboxName, setLightboxName] = useState<string>('');
 
   useEffect(() => {
     try {
@@ -207,8 +215,18 @@ function LibraryContent() {
       showToast('Cần cài đặt AFF HUB Extension để tạo video!');
       return;
     }
-    if (!isAllowedAutomationUrl(videoFlowSettings.chatgptUrl, 'chatgpt') ||
-        !isAllowedAutomationUrl(videoFlowSettings.flowUrl, 'flow')) {
+    let industry: { basePrompt?: string; chatgptUrl?: string; flowUrl?: string; referenceLinks?: string[] } | undefined;
+    try {
+      const response = await fetch('/api/industries');
+      if (!response.ok) throw new Error();
+      const data = await response.json();
+      industry = data.industries.find((item: { name: string }) => item.name === product.category);
+    } catch { showToast('Không tải được cấu hình ngành hàng. Vui lòng thử lại để tránh dùng sai dự án Flow.'); return; }
+    const settings = { ...videoFlowSettings, chatgptUrl: industry?.chatgptUrl || videoFlowSettings.chatgptUrl, flowUrl: industry?.flowUrl || videoFlowSettings.flowUrl };
+    if (industry && !industry.flowUrl) { showToast('Hãy gắn link dự án Flow trong Ngành hàng & Prompt trước khi tạo video.'); return; }
+    if (industry?.flowUrl && !isServiceUrl(industry.flowUrl, 'flow', true)) { showToast('Link dự án Flow của ngành hàng không hợp lệ.'); return; }
+    if (!isAllowedAutomationUrl(settings.chatgptUrl, 'chatgpt') ||
+        !isAllowedAutomationUrl(settings.flowUrl, 'flow')) {
       setVideoSettingsDraft(videoFlowSettings);
       setVideoSettingsOpen(true);
       showToast('Hãy kiểm tra và lưu Cấu hình Video AI trước khi tạo.');
@@ -222,11 +240,14 @@ function LibraryContent() {
     window.postMessage({
       type: 'AFF_CREATE_VIDEO',
       imageUrl: product.image,
-      chatgptUrl: videoFlowSettings.chatgptUrl,
-      flowUrl: videoFlowSettings.flowUrl,
+      chatgptUrl: settings.chatgptUrl,
+      flowUrl: settings.flowUrl,
+      basePrompt: industry?.basePrompt || "",
+      referenceLinks: industry?.referenceLinks || [],
       productId: product.id,
       productName: product.name,
       productContext: {
+        ...(product.marketplaceData || {}),
         id: product.id,
         externalProductId: product.externalProductId,
         platform: product.platform || product.shop?.platform,
@@ -244,6 +265,7 @@ function LibraryContent() {
         voucherPlatform: product.voucherPlatform,
       },
       flowOptions: {
+        reuseProject: Boolean(industry?.flowUrl) || isServiceUrl(settings.flowUrl, "flow", true),
         referenceMode: videoFlowSettings.referenceMode,
         aspectRatio: videoFlowSettings.aspectRatio,
         duration: videoFlowSettings.duration,
@@ -612,7 +634,27 @@ function LibraryContent() {
     showToast('Đã xuất file Excel thành công!');
   };
 
+  const handleDownloadImage = async (imageUrl: string, productName: string) => {
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const safeName = productName.replace(/[^a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF_\s-]/g, '').trim().replace(/\s+/g, '_').slice(0, 60);
+      link.download = `${safeName || 'product'}_${Date.now()}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      // Fallback: open in new tab
+      window.open(imageUrl, '_blank');
+    }
+  };
+
   const [enrichingBulk, setEnrichingBulk] = useState(false);
+
 
   const handleBulkEnrichCommission = async () => {
     if (selectedIds.length === 0) return;
@@ -1122,8 +1164,16 @@ function LibraryContent() {
                 <img
                   src={p.image}
                   alt={p.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
+                  onClick={() => { setLightboxImage(p.image); setLightboxName(p.name); }}
                 />
+                <div
+                  className="absolute top-3 left-10 p-1.5 rounded-full bg-slate-950/70 backdrop-blur border border-slate-600/50 text-slate-300 hover:text-white hover:bg-slate-800/90 cursor-pointer transition-all z-10"
+                  onClick={() => { setLightboxImage(p.image); setLightboxName(p.name); }}
+                  title="Phóng to ảnh sản phẩm"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </div>
                 
                 <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-slate-950/80 backdrop-blur border border-amber-500/40 text-amber-300 font-extrabold text-[11px] shadow flex items-center gap-1">
                   <Flame className="w-3 h-3 text-amber-400 fill-amber-400" />
@@ -1312,6 +1362,7 @@ function LibraryContent() {
                     </button>
                   )}
 
+                  <ProductKnowledgeButton product={p} onSaved={updated => setProducts(prev => prev.map(item => item.id === updated.id ? { ...item, ...updated } : item))} />
                   <div className="grid grid-cols-4 gap-1.5 text-[11px]">
                     <a
                       href={p.originalUrl}
@@ -1393,7 +1444,7 @@ function LibraryContent() {
                   </td>
                   <td className="p-3">
                     <div className="flex items-center gap-3">
-                      <img src={p.image} alt={p.name} className="w-10 h-10 rounded-lg object-cover bg-slate-900 flex-shrink-0" />
+                      <img src={p.image} alt={p.name} className="w-10 h-10 rounded-lg object-cover bg-slate-900 flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-purple-500/50 transition-all" onClick={() => { setLightboxImage(p.image); setLightboxName(p.name); }} title="Phóng to ảnh" />
                       <div>
                         <div className="font-bold text-white truncate max-w-[280px]">{p.name}</div>
                         <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
@@ -1441,6 +1492,7 @@ function LibraryContent() {
                     </span>
                   </td>
                   <td className="p-3">
+                    <ProductKnowledgeButton product={p} onSaved={updated => setProducts(prev => prev.map(item => item.id === updated.id ? { ...item, ...updated } : item))} />
                     {p.affiliateUrl ? (
                       <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-[10px]">
                         ✓ Sẵn sàng
@@ -1750,6 +1802,49 @@ function LibraryContent() {
                   Lưu cấu hình
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* IMAGE LIGHTBOX MODAL */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm p-4 animate-fade-in"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div
+            className="relative max-w-3xl w-full max-h-[90vh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setLightboxImage(null)}
+              className="absolute -top-2 -right-2 z-10 p-2 rounded-full bg-slate-800 border border-slate-600 text-slate-300 hover:text-white hover:bg-slate-700 transition-all shadow-lg"
+              title="Đóng"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Image */}
+            <div className="w-full overflow-auto rounded-2xl border border-slate-700/50 shadow-2xl bg-slate-900">
+              <img
+                src={lightboxImage}
+                alt={lightboxName}
+                className="w-full h-auto max-h-[75vh] object-contain"
+              />
+            </div>
+
+            {/* Product name + Download */}
+            <div className="mt-3 flex items-center justify-between gap-3 w-full px-1">
+              <p className="text-sm text-slate-300 font-medium truncate flex-1">{lightboxName}</p>
+              <button
+                onClick={() => handleDownloadImage(lightboxImage, lightboxName)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-glow transition-all active:scale-95 flex-shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                <span>Tải Ảnh</span>
+              </button>
             </div>
           </div>
         </div>

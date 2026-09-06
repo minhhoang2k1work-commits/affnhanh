@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { verifyAdminSessionFromRequest } from '@/lib/admin-auth';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    if (!verifyAdminSessionFromRequest(req)) {
+      return NextResponse.json({ error: 'Chưa đăng nhập admin.' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
     
@@ -26,6 +31,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    if (!verifyAdminSessionFromRequest(req)) {
+      return NextResponse.json({ error: 'Chưa đăng nhập admin.' }, { status: 401 });
+    }
+
     const { id } = await params;
     
     await db.licenseDevice.deleteMany({

@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AutoFlow</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">GOOGLE FLOW AUTOMATION</p>
+          <h1>AutoFlow</h1>
+        </div>
+        <div class="header-statuses">
+          <span id="desktopBadge" class="status-badge desktop-badge" data-status="connecting" title="ws://localhost:8765">App: Đang nối</span>
+          <span id="statusBadge" class="status-badge" data-status="idle">Sẵn sàng</span>
+        </div>
+      </header>
+
+      <!-- Tầng 1: Tab lớn Flow / Auto ChatGPT -->
+      <nav class="main-tabs" aria-label="Nhóm AutoFlow">
+        <button class="main-tab is-active" type="button" data-main-group="flow" aria-selected="true">
+          <span aria-hidden="true">⚡</span> Flow
+        </button>
+        <button class="main-tab" type="button" data-main-group="chatgpt" aria-selected="false">
+          <span aria-hidden="true">🤖</span> Auto ChatGPT
+        </button>
+      </nav>
+
+      <!-- Tầng 2: Sub-tab (chỉ hiện khi đang ở nhóm Flow) -->
+      <nav class="panel-tabs" id="flowSubTabs" aria-label="Khu vực Flow">
+        <button class="panel-tab is-active" type="button" data-panel-target="control" aria-selected="true">
+          <span aria-hidden="true">☷</span> Điều khiển
+        </button>
+        <button class="panel-tab" type="button" data-panel-target="filmmaker" aria-selected="false">
+          <span aria-hidden="true">🎬</span> Làm phim
+        </button>
+        <button class="panel-tab" type="button" data-panel-target="settings" aria-selected="false">
+          <span aria-hidden="true">⚙</span> Cài đặt
+        </button>
+        <button class="panel-tab" type="button" data-panel-target="logs" aria-selected="false">
+          <span aria-hidden="true">⌕</span> Nhật ký
+        </button>
+      </nav>
+
+      <section class="panel-view" data-panel-view="control">
+
+        <!-- 1. Prompt — FIRST -->
+        <section class="card" aria-labelledby="promptHeading">
+          <div class="section-heading">
+            <div>
+              <h2 id="promptHeading">📝 Danh sách prompt</h2>
+              <p>Mỗi dòng là một prompt riêng.</p>
+            </div>
+            <span id="promptCount" class="counter">0 prompt</span>
+          </div>
+          <label class="sr-only" for="prompts">Danh sách prompt</label>
+          <textarea id="prompts" rows="8" spellcheck="false" placeholder="Cảnh điện ảnh về một thành phố nổi trên mây...&#10;Một chú mèo phi hành gia bước trên Sao Hỏa..."></textarea>
+        </section>
+
+        <!-- 2. Mode + Settings — compact, same style as Filmmaker -->
+        <section class="card workflow-card" aria-labelledby="workflowHeading" style="padding-bottom:12px;">
+          <div class="section-heading compact workflow-heading">
+            <div>
+              <h2 id="workflowHeading">⚙ Chế độ &amp; Cài đặt</h2>
+              <p id="workflowHelp">Loại tác vụ, mô hình, tỷ lệ, số kết quả.</p>
+            </div>
+          </div>
+
+          <label class="sr-only" for="workflowMode">Chức năng Flow</label>
+          <select id="workflowMode" class="sr-only" tabindex="-1" aria-hidden="true">
+            <option value="text_to_video">Văn bản → Video</option>
+            <option value="text_to_image">Văn bản → Hình ảnh</option>
+            <option value="frames_to_video">Khung hình → Video</option>
+            <option value="ingredients_to_video">Thành phần → Video</option>
+            <option value="image_edit">Chỉnh sửa hình ảnh</option>
+            <option value="video_edit">Chỉnh sửa video (Omni)</option>
+            <option value="extend_video">Nối dài video đã chọn</option>
+            <option value="agent">Flow Agent / Batch thông minh</option>
+          </select>
+
+          <div id="workflowTabs" class="workflow-tabs" role="tablist" aria-label="Chức năng Flow" style="margin-bottom:10px;">
+            <button class="workflow-tab is-active" type="button" data-workflow-mode="text_to_video" data-run-control aria-selected="true">▷ Văn bản → Video</button>
+            <button class="workflow-tab" type="button" data-workflow-mode="frames_to_video" data-run-control aria-selected="false">⊞ Khung hình → Video</button>
+            <button class="workflow-tab" type="button" data-workflow-mode="ingredients_to_video" data-run-control aria-selected="false">⊟ Thành phần → Video</button>
+            <button class="workflow-tab" type="button" data-workflow-mode="text_to_image" data-run-control aria-selected="false">☆ Văn bản → Ảnh</button>
+            <button class="workflow-tab" type="button" data-workflow-mode="image_edit" data-run-control aria-selected="false">⊞ Ảnh → Ảnh</button>
+            <button class="workflow-tab" type="button" data-workflow-mode="agent" data-run-control aria-selected="false">✣ Agent</button>
+            <button class="workflow-tab" type="button" data-workflow-mode="video_edit" data-run-control aria-selected="false">✎ Sửa video</button>
+            <button class="workflow-tab" type="button" data-workflow-mode="extend_video" data-run-control aria-selected="false">↝ Nối dài</button>
+          </div>
+
+          <div class="workflow-grid" style="margin-top:0;">
+            <label class="field full-width"><span>Mô hình</span><select id="modelSelect" data-run-control></select></label>
+            <label class="field"><span>Tỷ lệ</span><select id="aspectRatio" data-run-control><option value="auto">Giữ cài đặt Flow</option><option value="16:9">16:9 ngang</option><option value="9:16">9:16 dọc</option><option value="1:1">1:1 vuông</option><option value="4:3">4:3</option><option value="3:4">3:4</option></select></label>
+            <label class="field"><span>Thời lượng</span><select id="durationSelect" data-run-control><option value="auto">Theo Flow</option><option value="4">4 giây</option><option value="6">6 giây</option><option value="8">8 giây</option><option value="10">10 giây</option></select></label>
+            <label class="field full-width"><span>Số kết quả mỗi prompt</span><select id="outputCount" data-run-control><option value="1">1 kết quả</option><option value="2" selected>2 kết quả</option><option value="3">3 kết quả</option><option value="4">4 kết quả</option></select></label>
+          </div>
+        </section>
+
+        <!-- 3. Asset fields (shown/hidden by mode) -->
+        <div id="assetFields" class="asset-fields" hidden>
+          <div id="startFrameGroup" class="asset-group" hidden>
+            <label for="startFrameInput">Khung hình đầu <strong>bắt buộc</strong></label>
+            <div class="asset-input-row">
+              <input id="startFrameInput" type="file" accept="image/*" data-run-control />
+              <button class="pick-from-flow-btn" type="button" data-target="startFrameInput" data-multiple="false" title="Chọn ảnh đang có trên Flow">⬡ Flow</button>
+            </div>
+            <div id="startFramePreview" class="asset-preview-row"></div>
+          </div>
+          <div id="endFrameGroup" class="asset-group" hidden>
+            <label for="endFrameInput">Khung hình cuối <span>không bắt buộc</span></label>
+            <div class="asset-input-row">
+              <input id="endFrameInput" type="file" accept="image/*" data-run-control />
+              <button class="pick-from-flow-btn" type="button" data-target="endFrameInput" data-multiple="false" title="Chọn ảnh đang có trên Flow">⬡ Flow</button>
+            </div>
+            <div id="endFramePreview" class="asset-preview-row"></div>
+          </div>
+          <div id="referenceFilesGroup" class="asset-group" hidden>
+            <label for="referenceFiles">Ảnh/video thành phần <strong>bắt buộc</strong></label>
+            <div class="asset-input-row">
+              <input id="referenceFiles" type="file" accept="image/*,video/mp4,video/webm,video/quicktime" multiple data-run-control />
+              <button class="pick-from-flow-btn" type="button" data-target="referenceFiles" data-multiple="true" title="Chọn ảnh/video đang có trên Flow">⬡ Flow</button>
+            </div>
+            <div id="referenceFilesPreview" class="asset-preview-row"></div>
+          </div>
+          <div id="sourceImagesGroup" class="asset-group" hidden>
+            <label for="sourceImages">Hình ảnh cần chỉnh sửa <strong>bắt buộc</strong></label>
+            <div class="asset-input-row">
+              <input id="sourceImages" type="file" accept="image/*" multiple data-run-control />
+              <button class="pick-from-flow-btn" type="button" data-target="sourceImages" data-multiple="true" title="Chọn ảnh đang có trên Flow">⬡ Flow</button>
+            </div>
+            <div id="sourceImagesPreview" class="asset-preview-row"></div>
+          </div>
+          <div id="sourceVideoGroup" class="asset-group" hidden>
+            <label for="sourceVideo">Video cần chỉnh sửa <strong>bắt buộc</strong></label>
+            <div class="asset-input-row">
+              <input id="sourceVideo" type="file" accept="video/mp4,video/webm,video/quicktime,video/x-msvideo,video/x-ms-wmv" data-run-control />
+              <button class="pick-from-flow-btn" type="button" data-target="sourceVideo" data-multiple="false" data-kind="video" title="Chọn video đang có trên Flow">⬡ Flow</button>
+            </div>
+            <div id="sourceVideoPreview" class="asset-preview-row"></div>
+          </div>
+          <div id="agentAssetsGroup" class="asset-group" hidden>
+            <label for="agentAssets">Tệp tham chiếu <span>không bắt buộc</span></label>
+            <div class="asset-input-row">
+              <input id="agentAssets" type="file" accept="image/*,video/mp4,video/webm,video/quicktime" multiple data-run-control />
+              <button class="pick-from-flow-btn" type="button" data-target="agentAssets" data-multiple="true" title="Chọn ảnh/video đang có trên Flow">⬡ Flow</button>
+            </div>
+            <div id="agentAssetsPreview" class="asset-preview-row"></div>
+          </div>
+          <p class="asset-note">Tổng tệp gửi tự động tối đa 24 MB. Tệp lớn hơn hãy tải trực tiếp lên Flow.</p>
+        </div>
+
+        <!-- 4. Progress + Buttons -->
+        <section class="run-card" aria-live="polite">
+          <div class="progress-copy">
+            <span id="progressText">Chưa có tác vụ</span>
+            <strong id="progressNumbers">0 / 0</strong>
+          </div>
+          <div class="progress-track" aria-hidden="true"><div id="progressBar" class="progress-bar"></div></div>
+          <p id="currentPrompt" class="current-prompt">Mở một dự án Google Flow rồi bấm Bắt đầu.</p>
+        </section>
+
+        <div class="button-row">
+          <button id="startButton" class="button primary" type="button"><span class="button-icon" aria-hidden="true">▶</span><span id="startButtonLabel">Bắt đầu</span></button>
+          <button id="stopButton" class="button danger" type="button" disabled><span class="button-icon" aria-hidden="true">■</span>Dừng lại</button>
+          <button id="resetButton" class="button secondary" type="button" title="Reset trạng thái nếu extension bị kẹt"><span class="button-icon" aria-hidden="true">↺</span>Reset</button>
+        </div>
+      </section>
+
+
+      <!-- ======== FILMMAKER TAB ======== -->
+      <section class="panel-view" data-panel-view="filmmaker" hidden>
+
+        <!-- 1. Prompt List — FIRST, most important -->
+        <section class="card" aria-labelledby="fmPromptsHeading">
+          <div class="section-heading">
+            <div><h2 id="fmPromptsHeading">📝 Danh sách prompt</h2><p>Mỗi dòng là một cảnh riêng biệt.</p></div>
+            <span id="fmPromptCount" class="counter">0 prompt</span>
+          </div>
+          <textarea id="fmPrompts" class="prompts-textarea" rows="6" placeholder="Cảnh 1: Cô gái đi dạo bãi biển lúc hoàng hôn&#10;Cảnh 2: Thành phố đêm nhộn nhịp&#10;Cảnh 3: Núi tuyết ban mai"></textarea>
+        </section>
+
+        <!-- 2. Mode + Output Settings — compact row -->
+        <section class="card" aria-labelledby="fmWorkflowHeading" style="padding-bottom:12px;">
+          <div class="section-heading compact workflow-heading">
+            <div>
+              <h2 id="fmWorkflowHeading">⚙ Chế độ &amp; Cài đặt</h2>
+              <p id="fmWorkflowHelp">Loại tác vụ, mô hình, tỷ lệ, số kết quả.</p>
+            </div>
+          </div>
+
+          <!-- Mode pills — compact, 2 per row -->
+          <div id="fmWorkflowTabs" class="workflow-tabs" style="margin-bottom:10px;">
+            <button class="workflow-tab" type="button" data-fm-workflow="text_to_video">▷ Văn bản → Video</button>
+            <button class="workflow-tab" type="button" data-fm-workflow="frames_to_video">⊞ Khung hình → Video</button>
+            <button class="workflow-tab" type="button" data-fm-workflow="ingredients_to_video">⊟ Thành phần → Video</button>
+            <button class="workflow-tab" type="button" data-fm-workflow="text_to_image">☆ Văn bản → Ảnh</button>
+            <button class="workflow-tab is-active" type="button" data-fm-workflow="image_edit">⊞ Ảnh → Ảnh</button>
+          </div>
+
+          <!-- Output settings inline -->
+          <div class="workflow-grid" style="margin-top:0;">
+            <label class="field full-width"><span>Mô hình</span><select id="fmModelSelect"></select></label>
+            <label class="field"><span>Tỷ lệ</span>
+              <select id="fmAspectRatio">
+                <option value="auto">Theo Flow</option>
+                <option value="16:9">16:9 ngang</option>
+                <option value="9:16">9:16 dọc</option>
+                <option value="1:1">1:1 vuông</option>
+                <option value="4:3">4:3</option>
+                <option value="3:4">3:4</option>
+              </select>
+            </label>
+            <label class="field"><span>Thời lượng</span>
+              <select id="fmDuration">
+                <option value="auto">Theo Flow</option>
+                <option value="4">4 giây</option>
+                <option value="6">6 giây</option>
+                <option value="8">8 giây</option>
+                <option value="10">10 giây</option>
+              </select>
+            </label>
+            <label class="field full-width"><span>Số kết quả / prompt</span>
+              <select id="fmOutputCount">
+                <option value="1">1 kết quả</option>
+                <option value="2" selected>2 kết quả</option>
+                <option value="3">3 kết quả</option>
+                <option value="4">4 kết quả</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <!-- 3. Style + Product Reference -->
+        <section class="card" aria-labelledby="fmStyleHeading" style="border-color: rgba(255,255,255,0.08);">
+          <div class="section-heading compact">
+            <div><h2 id="fmStyleHeading">🎨 Style &amp; Sản phẩm</h2><p>Giữ nhất quán style, màu sắc hoặc sản phẩm.</p></div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;">
+              <input type="checkbox" id="fmUseStyle" checked style="accent-color:var(--accent);"> Bật
+            </label>
+          </div>
+          <div class="asset-group" id="fmStyleGroup">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div>
+                <label style="font-size:10px;color:var(--text-muted);margin-bottom:4px;display:block;">Style</label>
+                <div class="asset-drop-zone" id="fmStyleZone" data-fm-input="fmStyleFiles" style="aspect-ratio:1;min-height:60px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;cursor:pointer;border-radius:10px;border:1.5px dashed rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);font-size:10px;color:rgba(255,255,255,0.3);">
+                  <span class="material-symbols-outlined" style="font-size:20px;">palette</span>
+                  <span>Chọn ảnh</span>
+                </div>
+                <input type="file" id="fmStyleFiles" accept="image/*" hidden>
+              </div>
+              <div>
+                <label style="font-size:10px;color:var(--text-muted);margin-bottom:4px;display:block;">Product</label>
+                <div class="asset-drop-zone" id="fmProductZone" data-fm-input="fmProductFiles" style="aspect-ratio:1;min-height:60px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;cursor:pointer;border-radius:10px;border:1.5px dashed rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);font-size:10px;color:rgba(255,255,255,0.3);">
+                  <span class="material-symbols-outlined" style="font-size:20px;">shopping_bag</span>
+                  <span>Chọn ảnh</span>
+                </div>
+                <input type="file" id="fmProductFiles" accept="image/*" hidden>
+              </div>
+            </div>
+            <label style="font-size:10px;color:var(--text-muted);margin-top:6px;display:block;">Mô tả phong cách (tuỳ chọn)</label>
+            <textarea id="fmStylePrompt" rows="2" placeholder="Cinematic, warm tones, shallow depth of field..." style="width:100%;resize:none;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:inherit;font-size:11px;padding:6px 8px;outline:none;"></textarea>
+            <div style="display:flex;gap:6px;margin-top:4px;">
+              <button id="fmPickStyle" class="text-button" type="button" style="font-size:10px;">○ Flow — Chọn Style</button>
+              <button id="fmPickProduct" class="text-button" type="button" style="font-size:10px;">○ Flow — Chọn Product</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. Environment Reference -->
+        <section class="card" aria-labelledby="fmEnvHeading" style="border-color: rgba(160,120,255,0.15);">
+          <div class="section-heading compact">
+            <div><h2 id="fmEnvHeading" style="color:#c4a8ff;">🌄 Bối cảnh</h2><p>Giữ nhất quán nền và không gian cho mọi cảnh.</p></div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;">
+              <input type="checkbox" id="fmUseEnv" checked style="accent-color:#a78bfa;"> Bật
+            </label>
+          </div>
+          <div id="fmEnvGroup">
+            <div class="asset-drop-zone" id="fmEnvZone" data-fm-input="fmEnvFiles" style="width:100%;aspect-ratio:21/9;min-height:55px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;cursor:pointer;border-radius:10px;border:1.5px dashed rgba(160,120,255,0.25);background:rgba(160,120,255,0.04);font-size:10px;color:rgba(255,255,255,0.3);">
+              <span class="material-symbols-outlined" style="font-size:22px;">landscape</span>
+              <span>Bối cảnh / Background</span>
+            </div>
+            <input type="file" id="fmEnvFiles" accept="image/*" hidden>
+            <textarea id="fmEnvPrompt" rows="2" placeholder="Bãi biển buổi chiều, ánh nắng vàng, Việt Nam..." style="width:100%;resize:none;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:inherit;font-size:11px;padding:6px 8px;outline:none;margin-top:6px;"></textarea>
+            <button id="fmPickEnv" class="text-button" type="button" style="font-size:10px;margin-top:4px;">○ Flow — Chọn Bối cảnh</button>
+          </div>
+        </section>
+
+        <!-- 5. Character Sync -->
+        <section class="card" aria-labelledby="fmCharHeading" style="border-color: rgba(100,180,255,0.15);">
+          <div class="section-heading compact">
+            <div><h2 id="fmCharHeading" style="color:#7dd3fc;">👤 Nhân vật</h2><p>Dùng tên nhân vật trong prompt để tự gắn ảnh tham chiếu.</p></div>
+            <button id="fmAddChar" class="text-button" type="button" title="Thêm nhân vật">+ Thêm</button>
+          </div>
+          <div id="fmCharList" class="fm-char-list" style="display:flex;flex-direction:column;gap:8px;">
+            <!-- Characters injected by JS -->
+          </div>
+        </section>
+
+        <!-- 6. Delay — compact -->
+        <section class="card" aria-labelledby="fmDelayHeading" style="padding:10px 14px;">
+          <div class="section-heading compact" style="margin-bottom:8px;"><div><h2 id="fmDelayHeading" style="font-size:12px;">⏱ Thời gian chờ sau mỗi cảnh</h2></div></div>
+          <div class="delay-grid">
+            <label><span>Nhỏ nhất</span><span class="input-with-unit"><input id="fmMinDelay" type="number" min="0" max="86400" step="1" value="20" /><span>giây</span></span></label>
+            <span class="delay-separator" aria-hidden="true">→</span>
+            <label><span>Lớn nhất</span><span class="input-with-unit"><input id="fmMaxDelay" type="number" min="0" max="86400" step="1" value="30" /><span>giây</span></span></label>
+          </div>
+        </section>
+
+        <!-- 7. Progress + Actions -->
+        <section class="run-card" aria-live="polite">
+          <div class="progress-copy">
+            <span id="fmProgressText">Chưa có tác vụ</span>
+            <strong id="fmProgressNumbers">0 / 0</strong>
+          </div>
+          <div class="progress-track" aria-hidden="true"><div id="fmProgressBar" class="progress-bar"></div></div>
+          <p id="fmCurrentPrompt" class="current-prompt">Thiết lập tham chiếu và nhấn Bắt đầu.</p>
+        </section>
+
+        <!-- 8. Inline mini-log — mirrors last entries from Logs tab -->
+        <section id="fmMiniLogSection" class="card" style="padding:8px 12px;border-color:rgba(255,255,255,0.06);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <span style="font-size:10px;color:var(--text-muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase;">⌕ Nhật ký</span>
+            <button id="fmClearMiniLog" class="text-button" type="button" style="font-size:9px;opacity:.6;">Xóa</button>
+          </div>
+          <div id="fmMiniLogList" class="log-list" role="log" aria-live="polite" aria-relevant="additions" style="max-height:120px;overflow-y:auto;font-size:10px;gap:2px;">
+            <p class="empty-log" style="font-size:10px;">Chưa có nhật ký.</p>
+          </div>
+        </section>
+
+        <div class="button-row">
+          <button id="fmStartButton" class="button primary" type="button"><span class="button-icon" aria-hidden="true">▶</span><span id="fmStartLabel">Bắt đầu làm phim</span></button>
+          <button id="fmStopButton" class="button danger" type="button" disabled><span class="button-icon" aria-hidden="true">■</span>Dừng lại</button>
+          <button id="fmResetButton" class="button secondary" type="button" title="Reset trạng thái">↺</button>
+        </div>
+
+      </section>
+
+
+
+
+
+
+      <section class="panel-view" data-panel-view="settings" hidden>
+
+        <section class="card" aria-labelledby="delayHeading">
+          <div class="section-heading compact"><div><h2 id="delayHeading">Thời gian chờ ngẫu nhiên</h2><p>Áp dụng sau khi tải xong từng prompt.</p></div></div>
+          <div class="delay-grid">
+            <label><span>Nhỏ nhất</span><span class="input-with-unit"><input id="minDelay" type="number" min="0" max="86400" step="1" value="20" /><span>giây</span></span></label>
+            <span class="delay-separator" aria-hidden="true">→</span>
+            <label><span>Lớn nhất</span><span class="input-with-unit"><input id="maxDelay" type="number" min="0" max="86400" step="1" value="30" /><span>giây</span></span></label>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel-view" data-panel-view="logs" hidden>
+        <section class="card log-card" aria-labelledby="logHeading">
+          <div class="section-heading compact">
+            <div><h2 id="logHeading">Nhật ký Gỡ Lỗi</h2><p>Tệp được lưu vào Downloads/AutoFlow_Output.</p></div>
+            <button id="clearLogsButton" class="text-button" type="button">Xóa</button>
+          </div>
+          <div id="logList" class="log-list" role="log" aria-live="polite" aria-relevant="additions"><p class="empty-log">Chưa có nhật ký.</p></div>
+        </section>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════════
+           AUTO CHATGPT — Thu thập kịch bản / dữ liệu
+      ══════════════════════════════════════════════════════════ -->
+      <section class="panel-view chatgpt-view" data-panel-view="chatgpt" hidden>
+
+        <!-- Status bar -->
+        <div class="cgpt-status-bar">
+          <span id="cgptStatusDot" class="cgpt-dot" data-status="idle"></span>
+          <span id="cgptStatusLabel" class="cgpt-status-label">Chờ lệnh</span>
+          <span id="cgptCounter" class="counter">0 / 0</span>
+        </div>
+
+        <!-- Card: Mode -->
+        <section class="card cgpt-card" aria-labelledby="cgptModeHeading">
+          <div class="section-heading compact">
+            <div>
+              <h2 id="cgptModeHeading">Chế độ thu thập</h2>
+              <p>Chọn loại dữ liệu cần lấy từ ChatGPT.</p>
+            </div>
+          </div>
+          <div class="cgpt-mode-tabs" role="tablist">
+            <button class="cgpt-mode-tab is-active" data-cgpt-mode="scenario" type="button" aria-selected="true">📜 Kịch bản</button>
+            <button class="cgpt-mode-tab" data-cgpt-mode="research" type="button" aria-selected="false">🔍 Nghiên cứu</button>
+            <button class="cgpt-mode-tab" data-cgpt-mode="outline" type="button" aria-selected="false">📋 Outline</button>
+            <button class="cgpt-mode-tab" data-cgpt-mode="custom" type="button" aria-selected="false">⚡ Tùy chỉnh</button>
+          </div>
+        </section>
+
+        <!-- Card: Prompt template -->
+        <section class="card cgpt-card" aria-labelledby="cgptTplHeading">
+          <div class="section-heading compact">
+            <div>
+              <h2 id="cgptTplHeading">Template prompt</h2>
+              <p>Dùng <code>{topic}</code> làm placeholder cho chủ đề.</p>
+            </div>
+            <button id="cgptLoadTemplate" class="text-button" type="button">Mẫu mặc định</button>
+          </div>
+          <textarea id="cgptTemplate" class="cgpt-textarea" rows="5"
+            placeholder="Viết kịch bản video YouTube 90 giây về chủ đề: {topic}&#10;Gồm: Hook mở đầu, 3 điểm chính, CTA cuối video.&#10;Viết theo phong cách kể chuyện, ngắn gọn, dễ hiểu."></textarea>
+        </section>
+
+        <!-- Card: Topics -->
+        <section class="card cgpt-card" aria-labelledby="cgptTopicsHeading">
+          <div class="section-heading compact">
+            <div>
+              <h2 id="cgptTopicsHeading">Danh sách chủ đề</h2>
+              <p>Mỗi dòng = 1 chủ đề. ChatGPT xử lý lần lượt.</p>
+            </div>
+            <span id="cgptTopicCount" class="counter">0 chủ đề</span>
+          </div>
+          <textarea id="cgptTopics" class="cgpt-textarea" rows="6"
+            placeholder="Cách kiếm tiền từ YouTube Shorts&#10;10 sai lầm khi làm video&#10;Bí quyết tăng trưởng kênh 0 → 10K subscriber&#10;Cách quay video bằng điện thoại chuyên nghiệp"></textarea>
+        </section>
+
+        <!-- Card: Options -->
+        <section class="card cgpt-card" aria-labelledby="cgptOptsHeading">
+          <div class="section-heading compact">
+            <div><h2 id="cgptOptsHeading">Tuỳ chọn</h2></div>
+          </div>
+          <div class="cgpt-opts-grid">
+            <label>
+              <span>Chờ phản hồi (giây)</span>
+              <input id="cgptWaitSec" type="number" min="5" max="120" value="25" />
+            </label>
+            <label>
+              <span>Delay giữa chủ đề (giây)</span>
+              <input id="cgptDelaySec" type="number" min="2" max="60" value="8" />
+            </label>
+            <label class="cgpt-full cgpt-checkbox-label">
+              <input id="cgptAutoOpen" type="checkbox" checked />
+              <span>Tự mở ChatGPT nếu chưa mở tab</span>
+            </label>
+            <label class="cgpt-full cgpt-checkbox-label">
+              <input id="cgptSendToApp" type="checkbox" checked />
+              <span>Gửi kết quả về App (Desktop)</span>
+            </label>
+          </div>
+        </section>
+
+        <!-- Progress -->
+        <section class="run-card cgpt-card" aria-live="polite">
+          <div class="progress-copy">
+            <span id="cgptProgressText">Chưa bắt đầu</span>
+            <strong id="cgptProgressNums">0 / 0</strong>
+          </div>
+          <div class="progress-track" aria-hidden="true"><div id="cgptProgressBar" class="progress-bar cgpt-bar"></div></div>
+          <p id="cgptCurrentTopic" class="current-prompt">Nhập chủ đề và nhấn Bắt đầu.</p>
+        </section>
+
+        <!-- Collected results -->
+        <section class="card cgpt-card" aria-labelledby="cgptResultsHeading">
+          <div class="section-heading compact">
+            <div>
+              <h2 id="cgptResultsHeading">Kết quả thu thập</h2>
+              <p id="cgptResultCount">0 kết quả</p>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button id="cgptCopyAll" class="text-button" type="button" disabled>Sao chép tất cả</button>
+              <button id="cgptClearResults" class="text-button danger-text" type="button">Xóa</button>
+            </div>
+          </div>
+          <div id="cgptResultsList" class="cgpt-results-list" role="log" aria-live="polite">
+            <p class="empty-log">Chưa có kết quả.</p>
+          </div>
+        </section>
+
+        <!-- Action buttons -->
+        <div class="button-row">
+          <button id="cgptStartBtn" class="button primary cgpt-start" type="button">
+            <span class="button-icon" aria-hidden="true">▶</span>
+            <span id="cgptStartLabel">Bắt đầu ChatGPT</span>
+          </button>
+          <button id="cgptStopBtn" class="button danger" type="button" disabled>
+            <span class="button-icon" aria-hidden="true">■</span>Dừng lại
+          </button>
+        </div>
+
+      </section>
+      <!-- /AUTO CHATGPT -->
+
+    </main>
+
+    <!-- ══════════════════════════════════════════════════════════
+         FLOW IMAGE PICKER MODAL
+    ══════════════════════════════════════════════════════════ -->
+    <div id="flowPickerOverlay" class="flow-picker-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="flowPickerTitle">
+      <div class="flow-picker-dialog">
+        <div class="flow-picker-header">
+          <div>
+            <h2 id="flowPickerTitle" class="flow-picker-title">Chọn từ Flow</h2>
+            <p class="flow-picker-subtitle">Chọn ảnh/video đang hiển thị trên trang Flow</p>
+          </div>
+          <button id="flowPickerClose" class="flow-picker-close" type="button" aria-label="Đóng">✕</button>
+        </div>
+        <div id="flowPickerStatus" class="flow-picker-status" hidden></div>
+        <div id="flowPickerGrid" class="flow-picker-grid" role="listbox" aria-multiselectable="true"></div>
+        <div class="flow-picker-footer">
+          <span id="flowPickerCount" class="flow-picker-sel-count">0 được chọn</span>
+          <div style="display:flex;gap:8px">
+            <button id="flowPickerRefresh" class="text-button" type="button">↺ Tải lại</button>
+            <button id="flowPickerConfirm" class="button primary" type="button" disabled>Dùng ảnh này</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <div id="flowGate" class="flow-gate" aria-live="assertive" hidden>
+      <section id="targetCard" class="target-card" data-status="checking">
+        <span id="targetIcon" class="target-icon" aria-hidden="true">!</span>
+        <div class="target-copy">
+          <h2 id="targetTitle">Đang kiểm tra Google Flow</h2>
+          <p id="targetDescription">Công cụ chỉ hoạt động khi bạn đang ở trang dự án Flow.</p>
+        </div>
+        <button id="openFlowButton" class="target-button" type="button" disabled><span aria-hidden="true">↗</span> Đang kiểm tra…</button>
+      </section>
+    </div>
+
+    <!-- ChatGPT Gate — hiện khi ở tab Auto ChatGPT nhưng chưa mở chatgpt.com -->
+    <div id="chatgptGate" class="flow-gate cgpt-gate" aria-live="assertive" hidden>
+      <section class="target-card cgpt-target-card" data-status="not_chatgpt">
+        <span class="target-icon cgpt-gate-icon" aria-hidden="true">🤖</span>
+        <div class="target-copy">
+          <h2>Chưa mở ChatGPT</h2>
+          <p>Auto ChatGPT cần tab <strong>chatgpt.com</strong> đang mở để tự động gõ lệnh và thu thập kết quả.</p>
+        </div>
+        <button id="openChatGPTButton" class="target-button cgpt-gate-btn" type="button">
+          <span aria-hidden="true">↗</span> Mở ChatGPT
+        </button>
+      </section>
+    </div>
+
+    <script src="sidepanel.js"></script>
+
+  </body>
+</html>

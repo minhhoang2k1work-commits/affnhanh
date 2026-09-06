@@ -9,7 +9,11 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "telegram": "node scripts/telegram-agent.cjs",
+    "telegram:identify": "node scripts/telegram-agent.cjs --identify",
+    "telegram:notify": "node scripts/telegram-agent.cjs --notifications-only",
+    "telegram:webhook": "node scripts/telegram-agent.cjs --set-webhook"
   },
   "dependencies": {
     "@prisma/client": "^5.19.0",

@@ -29,10 +29,18 @@ export async function GET(req: NextRequest) {
     });
 
     if (extJob) {
-      await db.extensionJob.update({
-        where: { id: extJob.id },
+      if (extJob.payload && JSON.parse(extJob.payload).source === 'telegram') {
+        const device = deviceToken ? await db.extensionDevice.findUnique({ where: { deviceToken } }) : null;
+        const licensedDevice = deviceToken ? await db.licenseDevice.findUnique({ where: { deviceToken }, include: { license: true } }) : null;
+        if (!device || device.userId !== extJob.userId || !licensedDevice || licensedDevice.license.key !== licenseKey || !licensedDevice.license.isActive || (licensedDevice.license.expiresAt && licensedDevice.license.expiresAt < new Date())) {
+          return NextResponse.json({ hasJob: false, error: 'Thiết bị chưa được phép nhận lệnh Telegram.' }, { status: 403 });
+        }
+      }
+      const claim = await db.extensionJob.updateMany({
+        where: { id: extJob.id, status: 'queued' },
         data: { status: 'claimed', claimedAt: new Date() },
       });
+      if (!claim.count) return NextResponse.json({ hasJob: false });
 
       return NextResponse.json({
         hasJob: true,

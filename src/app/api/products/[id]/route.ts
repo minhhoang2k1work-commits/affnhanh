@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { mergeKnowledge } from '@/lib/products/knowledge';
+import { db, getOrCreateUser } from '@/lib/db';
 import { sanitizePrice } from '@/lib/utils';
 
 export async function GET(
@@ -43,6 +44,9 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+    const user = await getOrCreateUser();
+    const product = await db.product.findFirst({ where: { id, userId: user.id } });
+    if (!product) return NextResponse.json({ error: 'Không tìm thấy sản phẩm' }, { status: 404 });
     const body = await req.json();
     const {
       price, salePrice, commissionRate, name,
@@ -53,6 +57,7 @@ export async function PATCH(
     } = body;
 
     const dataToUpdate: any = {};
+    if (body.marketplaceData) dataToUpdate.marketplaceData = mergeKnowledge(product.marketplaceData, body.marketplaceData);
 
     if (price !== undefined) {
       dataToUpdate.price = sanitizePrice(Number(price));

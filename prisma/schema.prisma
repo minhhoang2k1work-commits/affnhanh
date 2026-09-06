@@ -30,6 +30,43 @@ model User {
   aiProviders       AIProvider[]
   videoProjects     AIVideoProject[]
   flowRuns          FlowRun[]
+  industryWorkspaces IndustryWorkspace[]
+  telegramCommands  TelegramCommand[]
+}
+
+model TelegramCommand {
+  id                  String   @id
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  telegramUserId      String
+  chatId              String
+  text                String   @db.Text
+  status              String   @default("received")
+  reply               String?  @db.Text
+  replySentAt         DateTime?
+  jobId               String?
+  scanJobId           String?
+  notifiedAt          DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([notifiedAt])
+}
+
+model IndustryWorkspace {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  basePrompt     String   @default("") @db.Text
+  referenceLinks Json     @default("[]")
+  chatgptUrl     String   @default("https://chatgpt.com/")
+  flowUrl        String   @default("")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, name])
 }
 
 model AffiliateAccount {
@@ -101,6 +138,7 @@ model Product {
   stock                Int                 @default(100)
   originalUrl          String
   category             String?
+  marketplaceData      Json?               // Structured product evidence for script and video prompts
   targetCustomer       String?             // Đối tượng khách hàng mục tiêu
   affiliateScore       Int                 @default(85) // Calculated Score (0-100)
   hasAffiliate         Boolean             @default(true)

@@ -37,6 +37,18 @@ export async function POST(request: Request) {
           success = true;
           message = 'Connected successfully';
         }
+      } else if (name.toLowerCase() === 'fishaudio') {
+        const res = await fetch('https://api.fish.audio/v1/models', {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (res.ok) {
+          success = true;
+          message = 'Connected successfully';
+        }
+      } else if (name.toLowerCase() === 'google_tts') {
+        // Google TTS miễn phí — không cần test API key
+        success = true;
+        message = 'Google TTS is free and does not require an API key.';
       } else {
         message = `Provider ${name} has no safe read-only connection test. Use a controlled canary generation.`;
       }

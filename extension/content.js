@@ -18,7 +18,7 @@
         chrome.runtime.sendMessage({ action: 'CHECK_LICENSE' }, (licenseInfo) => {
           const payload = {
             type: 'AFF_EXTENSION_HANDSHAKE',
-            version: '1.8.2',
+            version: '1.11.0',
             installed: true,
             ready: Boolean(licenseInfo?.valid),
             deviceToken: stored?.deviceToken || null,
@@ -53,6 +53,19 @@
         return;
       }
 
+      if (event.data?.type === 'AFF_SEND_INDUSTRY_PROMPT') {
+        const requestId = event.data.requestId;
+        chrome.runtime.sendMessage({ action: 'AFF_SEND_INDUSTRY_PROMPT', url: event.data.url, prompt: event.data.prompt }, result => {
+          window.postMessage({ type: 'AFF_INDUSTRY_PROMPT_SENT', requestId, ...(result || { success: false, error: chrome.runtime.lastError?.message }) }, window.location.origin);
+        });
+      }
+      if (event.data?.type === 'AFF_COLLECT_PRODUCT') {
+        const requestId = event.data.requestId;
+        chrome.runtime.sendMessage({ action: 'AFF_COLLECT_PRODUCT', url: event.data.url }, result => {
+          window.postMessage({ type: 'AFF_PRODUCT_COLLECTED', requestId, ...(result || { success: false, error: chrome.runtime.lastError?.message }) }, window.location.origin);
+        });
+      }
+
       // Web app requests video creation for a product
       if (event.data?.type === 'AFF_CREATE_VIDEO') {
         console.log('[AFF HUB Extension] Video creation request:', event.data);
@@ -63,6 +76,8 @@
             chatgptUrl: event.data.chatgptUrl,
             flowUrl: event.data.flowUrl,
             flowOptions: event.data.flowOptions,
+            basePrompt: event.data.basePrompt,
+            referenceLinks: event.data.referenceLinks,
             productId: event.data.productId,
             productName: event.data.productName,
             productContext: event.data.productContext,
@@ -366,7 +381,7 @@
       .filter(Boolean)
       .slice(-6);
     const additionalProperties = (Array.isArray(jsonProduct.additionalProperty) ? jsonProduct.additionalProperty : [])
-      .slice(0, 20)
+      .slice(0, 100)
       .map((item) => ({ name: cleanMarketplaceText(item?.name, 100), value: cleanMarketplaceText(item?.value, 300) }))
       .filter((item) => item.name && item.value);
     const title = cleanMarketplaceText(
@@ -379,13 +394,13 @@
       bodyText,
       /(?:mô tả sản phẩm|product description|description)/i,
       /(?:đánh giá sản phẩm|product reviews?|customer reviews?|sản phẩm tương tự|you may also like)/i,
-      5000,
+      30000,
     );
     const detailText = marketplaceSection(
       bodyText,
       /(?:chi tiết sản phẩm|thông tin sản phẩm|product details?|specifications?)/i,
       /(?:mô tả sản phẩm|product description|đánh giá sản phẩm|product reviews?)/i,
-      3500,
+      15000,
     );
     const description = cleanMarketplaceText(
       jsonProduct.description ||
@@ -394,14 +409,38 @@
         '[class*="product-description"]', '[class*="product_detail"]', '[class*="product-detail"]',
       ]) || descriptionSection ||
       firstMetaContent(['meta[property="og:description"]', 'meta[name="description"]']),
-      5000,
+      30000,
     );
     const brand = typeof jsonProduct.brand === 'object' ? jsonProduct.brand?.name : jsonProduct.brand;
     const seller = offer.seller || jsonProduct.seller || {};
     const priceText = offer.price || offer.lowPrice || firstMetaContent([
       'meta[property="product:price:amount"]', 'meta[itemprop="price"]',
     ]);
+    const scoped = document.querySelector('main, [role="main"]') || document.body;
+    const urls = (values) => [...new Set(values.flat().map(v => {
+      try { const raw = v && typeof v === 'object' ? v.url || v.contentUrl : v; if (typeof raw !== 'string' || !raw.trim()) return ''; const u = new URL(raw, location.href); return /^https?:$/.test(u.protocol) ? u.href : ''; } catch { return ''; }
+    }).filter(Boolean))].slice(0, 100);
+    const images = urls([
+      ...(Array.isArray(jsonProduct.image) ? jsonProduct.image : jsonProduct.image ? [jsonProduct.image] : []),
+      ...[...scoped.querySelectorAll('[class*="gallery"] img, [class*="product-image"] img, [class*="product_image"] img, [class*="description"] img')].map(el => el.currentSrc || el.src || el.dataset.src),
+    ]);
+    const videos = urls([...scoped.querySelectorAll('video, video source')].map(el => el.currentSrc || el.src).filter(Boolean));
+    const section = (selectors) => firstElementText(selectors, 4000);
+    const reviews = [...scoped.querySelectorAll('[data-testid*="review-item"], [class*="review-item"], .shopee-product-rating')].slice(0, 30).map(el => ({
+      text: cleanMarketplaceText(el.querySelector('[class*="content"], [class*="comment"], [data-testid*="review-text"]')?.textContent, 1500),
+      variant: cleanMarketplaceText(el.querySelector('[class*="variation"], [class*="sku"]')?.textContent, 200),
+    })).filter(r => r.text);
+    for (const row of scoped.querySelectorAll('[class*="specification"] tr, [class*="attribute"] tr, [class*="specification"] dl')) {
+      const cells = row.querySelectorAll('th, td, dt, dd');
+      if (cells.length >= 2) additionalProperties.push({ name: cleanMarketplaceText(cells[0].textContent, 100), value: cleanMarketplaceText(cells[1].textContent, 1000) });
+    }
+    const missingFields = [!description && 'description', !additionalProperties.length && !detailText && 'specifications', !images.length && 'images', !videos.length && 'videos', !reviews.length && 'reviews'].filter(Boolean);
     return {
+      images, videos, reviews, missingFields,
+      shipping: section(['[data-testid*="shipping"]', '[class*="shipping-info"]', '[class*="shipping_info"]']),
+      returns: section(['[data-testid*="return-policy"]', '[class*="return-policy"]']),
+      warranty: section(['[data-testid*="warranty"]', '[class*="warranty"]']),
+      promotions: section(['[data-testid*="voucher"]', '[class*="voucher"]']),
       source: 'marketplace_live_page',
       capturedAt: new Date().toISOString(),
       platform: isTikTok ? 'TIKTOK' : isShopee ? 'SHOPEE' : location.hostname,
@@ -439,13 +478,22 @@
     }
     const startedAt = Date.now();
     let details = marketplaceDetailsSnapshot();
-    while (Date.now() - startedAt < 12000 && !details.name) {
+    while (Date.now() - startedAt < 12000 && (!details.name || !details.description)) {
       await new Promise((resolve) => setTimeout(resolve, 600));
       details = marketplaceDetailsSnapshot();
     }
     if (!details.name && !details.description) {
       throw new Error('Không đọc được tên hoặc mô tả sản phẩm từ trang sàn.');
     }
+    // Load lazy product sections without interacting with checkout or selecting a variant.
+    const initialY = window.scrollY;
+    try {
+      for (let i = 0; i < 5; i++) {
+        window.scrollBy(0, window.innerHeight);
+        await new Promise(resolve => setTimeout(resolve, 400));
+      }
+      details = marketplaceDetailsSnapshot();
+    } finally { window.scrollTo(0, initialY); }
     return details;
   }
 
@@ -805,7 +853,17 @@
         console.log(`[AFF HUB] Batch found: ${batch.length} products (Total: ${collectedProductKeys.size})`);
 
         // Add to pending products instead of pushing immediately
-        window.pendingProducts.push(...batch);
+        for (const product of batch) {
+          if (!isScanning) break;
+          try {
+            const result = await chrome.runtime.sendMessage({ action: 'AFF_COLLECT_PRODUCT', url: product.productUrl });
+            product.marketplaceData = result?.success ? result.details : { enrichmentWarning: result?.error || 'Chưa đọc được trang chi tiết.' };
+          } catch (error) { product.marketplaceData = { enrichmentWarning: error.message }; }
+          window.pendingProducts.push(product);
+          const pendingButton = document.getElementById('aff-hub-push');
+          if (pendingButton) pendingButton.innerText = 'ĐẨY ' + window.pendingProducts.length + ' SP';
+          chrome.runtime.sendMessage({ action: 'SCAN_PROGRESS', scanJobId, progress: Math.min(95, Math.round(collectedProductKeys.size / MAX_PRODUCTS * 100)), processedProducts: window.pendingProducts.length });
+        }
         
         // Update the button text to show how many products are ready to push
         const pushEl = document.getElementById('aff-hub-push');

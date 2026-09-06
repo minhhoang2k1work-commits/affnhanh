@@ -1,3 +1,4 @@
+import { buildProductBrief } from '@/lib/products/knowledge';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { db } from '@/lib/db';
@@ -24,7 +25,10 @@ async function getProject(projectId?: string) {
   if (!projectId) throw new Error('This flow step requires a videoProjectId.');
   const project = await db.aIVideoProject.findUnique({ where: { id: projectId } });
   if (!project) throw new Error(`Video project not found: ${projectId}`);
-  return project;
+  const product = project.productId ? await db.product.findFirst({ where: { id: project.productId, userId: project.userId } }) : null;
+  const industry = product?.category ? await db.industryWorkspace.findUnique({ where: { userId_name: { userId: project.userId, name: product.category } } }) : null;
+  const brief = [project.productDescription, industry?.basePrompt && `Yêu cầu ngành hàng: ${industry.basePrompt}`, industry && `Link tham khảo chưa xác nhận nội dung: ${JSON.stringify(industry.referenceLinks)}`].filter(Boolean).join('\n');
+  return { ...project, productDescription: product ? buildProductBrief(product, brief) : project.productDescription };
 }
 
 async function getScenes(projectId: string) {
@@ -88,7 +92,7 @@ const llm_storyboard: StepHandler = async (input) => {
     if (!session) throw new Error('ChatGPT browser session expired.');
     try {
       const { sendPrompt, extractJSON, buildStoryboardPrompt } = await import('@/lib/ai-browser/chatgpt-driver');
-      const prompt = buildStoryboardPrompt({ script, duration: Number(config.duration || project.duration), style: project.style });
+      const prompt = buildStoryboardPrompt({ script, productDescription: project.productDescription || '', duration: Number(config.duration || project.duration), style: project.style });
       storyboard = extractJSON((await sendPrompt(session.page, prompt)).response);
       scenes = storyboard?.scenes || [];
     } finally {
@@ -99,6 +103,7 @@ const llm_storyboard: StepHandler = async (input) => {
     const { generateStoryboard } = await import('@/lib/ai/openai-client');
     storyboard = await generateStoryboard({
       script: script as any,
+      productDescription: project.productDescription || '',
       duration: Number(config.duration || project.duration),
       style: project.style,
       apiKey: provider.apiKey!,

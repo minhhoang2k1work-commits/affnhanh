@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export function proxy(request: NextRequest) {
+  // This one machine-to-machine endpoint authenticates its own Telegram secret before reading data.
+  if (request.nextUrl.pathname === '/api/telegram/webhook') return NextResponse.next();
   const username = process.env.APP_BASIC_AUTH_USER;
   const password = process.env.APP_BASIC_AUTH_PASSWORD;
   if (!username || !password) return NextResponse.next();

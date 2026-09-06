@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { ensureExtensionScanJob } from '@/lib/scanner/queue';
+import { mergeKnowledge } from '@/lib/products/knowledge';
 import { sanitizePrice } from '@/lib/utils';
 import { enrichProductsBatch } from '@/lib/services/commissionEnricher';
 
@@ -129,6 +130,7 @@ export async function POST(
             await db.product.update({
               where: { id: existingProduct.id },
               data: {
+                marketplaceData: mergeKnowledge(existingProduct.marketplaceData, prod.marketplaceData || prod.details),
                 name,
                 image,
                 price: price > 0 ? price : existingProduct.price,
@@ -169,6 +171,7 @@ export async function POST(
                 platform,
                 shopId: dbShop.id,
                 externalProductId: extProductId,
+                marketplaceData: mergeKnowledge(null, prod.marketplaceData || prod.details),
                 name,
                 image,
                 price,

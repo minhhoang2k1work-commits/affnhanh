@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { verifyAdminSessionFromRequest } from '@/lib/admin-auth';
 
 export async function GET(req: NextRequest) {
   try {
+    if (!verifyAdminSessionFromRequest(req)) {
+      return NextResponse.json({ error: 'Chưa đăng nhập admin.' }, { status: 401 });
+    }
+
     const licenses = await db.license.findMany({
       include: { devices: true },
       orderBy: { createdAt: 'desc' },
@@ -26,6 +31,10 @@ function generateLicenseKey(): string {
 
 export async function POST(req: NextRequest) {
   try {
+    if (!verifyAdminSessionFromRequest(req)) {
+      return NextResponse.json({ error: 'Chưa đăng nhập admin.' }, { status: 401 });
+    }
+
     const { name, maxDevices, expiresAt } = await req.json().catch(() => ({}));
     
     const key = generateLicenseKey();

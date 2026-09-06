@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { db, getOrCreateUser } from '@/lib/db';
 import { encryptText } from '@/lib/crypto';
 
-const ALLOWED_NAMES = ['openai', 'chatgpt', 'google_veo', 'kling', 'runway', 'elevenlabs', 'google_aistudio'];
+const ALLOWED_NAMES = ['openai', 'chatgpt', 'google_veo', 'kling', 'runway', 'elevenlabs', 'google_aistudio', 'google_tts', 'fishaudio'];
 const ALLOWED_TYPES = ['llm', 'video', 'image', 'voiceover'];
 
 function sanitizeConfig(value: unknown): unknown {

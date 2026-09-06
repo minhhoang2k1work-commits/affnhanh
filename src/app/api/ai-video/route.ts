@@ -59,12 +59,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    if (productId && !productDescription) {
-      const product = await db.product.findUnique({ where: { id: productId } });
+    if (productId) {
+      const product = await db.product.findFirst({ where: { id: productId, userId: user.id } });
+      if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 });
       if (product) {
-        productDescription = product.name;
+        productDescription = productDescription || product.name;
         if (!productImages && product.image) {
-          productImages = [product.image];
+          const evidence = product.marketplaceData;
+          const gallery = evidence && typeof evidence === "object" && !Array.isArray(evidence) && Array.isArray(evidence.images) ? evidence.images.filter((v): v is string => typeof v === "string") : [];
+          productImages = [...new Set([product.image, ...gallery])];
         }
       }
     }

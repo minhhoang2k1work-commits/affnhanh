@@ -1,0 +1,111 @@
+{
+  "manifest_version": 3,
+  "name": "AutoFlow Hub — Google Flow & Affiliate Bridge",
+  "version": "2.3.0",
+  "description": "Hợp nhất AutoFlow (Google Flow Automation, ChatGPT Batch) và AFF HUB (Shopee/TikTok Scanner, Affiliate, AI Video). Hỗ trợ Side Panel, CDP Debugger, Offscreen Clipboard.",
+  "minimum_chrome_version": "116",
+
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "tabs",
+    "windows",
+    "scripting",
+    "storage",
+    "downloads",
+    "alarms",
+    "debugger",
+    "offscreen",
+    "clipboardWrite",
+    "unlimitedStorage"
+  ],
+
+  "host_permissions": [
+    "https://labs.google/*",
+    "https://flow.google/*",
+    "https://*.flow.google/*",
+    "https://chatgpt.com/*",
+    "https://*.chatgpt.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://*.vercel.app/*",
+    "https://shopee.vn/*",
+    "https://*.shopee.vn/*",
+    "https://affiliate.shopee.vn/*",
+    "https://*.susercontent.com/*",
+    "https://*.shopeeusercontent.com/*",
+    "https://*.tiktok.com/*",
+    "https://tiktok.com/*",
+    "https://shop.tiktok.com/*",
+    "https://seller-vn.tiktok.com/*",
+    "https://affiliate.tiktok.com/*",
+    "https://*.tiktokcdn.com/*",
+    "https://*.tiktokcdn-eu.com/*",
+    "https://*.byteimg.com/*",
+    "https://api.openai.com/*"
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AutoFlow Hub — Side Panel & Settings"
+  },
+
+  "content_scripts": [
+    {
+      "_comment": "Google Flow DOM Automation (Isolated World) — từ AutoCut",
+      "matches": ["https://labs.google/fx/*"],
+      "js": ["content-flow-autocut.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "_comment": "Google Flow Slate.js React Fiber Bypass (MAIN World) — từ AutoCut",
+      "matches": ["https://labs.google/fx/*"],
+      "js": ["flow-bridge.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    },
+    {
+      "_comment": "Google Flow Video Config & CDP Controller — từ AFF",
+      "matches": [
+        "https://flow.google/*",
+        "https://*.flow.google/*",
+        "https://labs.google/*",
+        "https://*.labs.google/*"
+      ],
+      "js": ["content-flow-aff.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "_comment": "ChatGPT Web Automation — từ AFF",
+      "matches": ["https://chatgpt.com/*", "https://*.chatgpt.com/*"],
+      "js": ["content-chatgpt.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "_comment": "E-Commerce Scanner & Affiliate — từ AFF (Shopee/TikTok/Web App)",
+      "matches": [
+        "https://shopee.vn/*",
+        "https://*.shopee.vn/*",
+        "https://affiliate.shopee.vn/*",
+        "https://*.tiktok.com/*",
+        "https://tiktok.com/*",
+        "https://shop.tiktok.com/*",
+        "https://seller-vn.tiktok.com/*",
+        "https://affiliate.tiktok.com/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "https://*.vercel.app/*"
+      ],
+      "js": ["content-marketplace.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -5,6 +5,8 @@ import * as veoClient from './veo-client';
 import * as klingClient from './kling-client';
 import * as runwayClient from './runway-client';
 import * as voiceoverClient from './voiceover-client';
+import * as googleTTSClient from './google-tts-client';
+import * as fishAudioClient from './fish-audio-client';
 import * as imageClient from './image-client';
 
 export type ProviderType = 'llm' | 'video' | 'image' | 'voiceover';
@@ -193,13 +195,74 @@ export class AIProviderManager {
     }
   }
 
-  public async getVoiceoverClient() {
-    const config = await this.getProviderConfig('voiceover', 'elevenlabs');
-    return {
-      generateVoiceover: (params: Omit<voiceoverClient.GenerateVoiceoverParams, 'apiKey'>) => voiceoverClient.generateVoiceover({ ...params, apiKey: config.apiKey! }),
-      listVoices: () => voiceoverClient.listVoices(config.apiKey!),
-      getEstimatedCost: voiceoverClient.getEstimatedCost,
-      providerName: 'elevenlabs'
-    };
+  /**
+   * Get voiceover client supporting multiple TTS providers:
+   * - 'elevenlabs' — Chất lượng cao, cần API key ($0.30/1000 chars)
+   * - 'google_tts' — Miễn phí, không cần API key, chất lượng trung bình
+   * - 'fishaudio' — Voice cloning, cần API key ($0.015/1000 chars)
+   *
+   * Ưu tiên: google_tts (free) → fishaudio (cheap) → elevenlabs (quality)
+   */
+  public async getVoiceoverClient(preferredProvider?: string) {
+    // Nếu chỉ định provider cụ thể
+    if (preferredProvider === 'google_tts') {
+      return {
+        generateVoiceover: (params: { text: string; language?: string }) =>
+          googleTTSClient.generateVoiceover(params),
+        generateSRT: googleTTSClient.generateSRT,
+        cleanScript: googleTTSClient.cleanScriptForTTS,
+        getEstimatedCost: googleTTSClient.getEstimatedCost,
+        providerName: 'google_tts' as const,
+      };
+    }
+
+    if (preferredProvider === 'fishaudio') {
+      const config = await this.getProviderConfig('voiceover', 'fishaudio');
+      return {
+        generateVoiceover: (params: Omit<fishAudioClient.FishAudioParams, 'apiKey'>) =>
+          fishAudioClient.generateVoiceover({ ...params, apiKey: config.apiKey! }),
+        listVoices: () => fishAudioClient.listVoices(config.apiKey!),
+        generateSRT: googleTTSClient.generateSRT,
+        cleanScript: googleTTSClient.cleanScriptForTTS,
+        getEstimatedCost: fishAudioClient.getEstimatedCost,
+        providerName: 'fishaudio' as const,
+      };
+    }
+
+    // Mặc định hoặc 'elevenlabs'
+    try {
+      const config = await this.getProviderConfig('voiceover', preferredProvider || 'elevenlabs');
+      if (config.name === 'fishaudio') {
+        return {
+          generateVoiceover: (params: Omit<fishAudioClient.FishAudioParams, 'apiKey'>) =>
+            fishAudioClient.generateVoiceover({ ...params, apiKey: config.apiKey! }),
+          listVoices: () => fishAudioClient.listVoices(config.apiKey!),
+          generateSRT: googleTTSClient.generateSRT,
+          cleanScript: googleTTSClient.cleanScriptForTTS,
+          getEstimatedCost: fishAudioClient.getEstimatedCost,
+          providerName: 'fishaudio' as const,
+        };
+      }
+      return {
+        generateVoiceover: (params: Omit<voiceoverClient.GenerateVoiceoverParams, 'apiKey'>) =>
+          voiceoverClient.generateVoiceover({ ...params, apiKey: config.apiKey! }),
+        listVoices: () => voiceoverClient.listVoices(config.apiKey!),
+        generateSRT: googleTTSClient.generateSRT,
+        cleanScript: googleTTSClient.cleanScriptForTTS,
+        getEstimatedCost: voiceoverClient.getEstimatedCost,
+        providerName: 'elevenlabs' as const,
+      };
+    } catch {
+      // Fallback: Google TTS miễn phí nếu không có API key nào
+      console.log('[AI] No paid voiceover provider available, falling back to Google TTS (free)');
+      return {
+        generateVoiceover: (params: { text: string; language?: string }) =>
+          googleTTSClient.generateVoiceover(params),
+        generateSRT: googleTTSClient.generateSRT,
+        cleanScript: googleTTSClient.cleanScriptForTTS,
+        getEstimatedCost: googleTTSClient.getEstimatedCost,
+        providerName: 'google_tts' as const,
+      };
+    }
   }
 }

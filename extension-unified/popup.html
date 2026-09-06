@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>AFF HUB Bridge</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      width: 320px;
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 16px;
+    }
+    .header {
+      display: flex;
+      items-center: center;
+      justify-content: space-between;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #1e293b;
+      margin-bottom: 14px;
+    }
+    .logo {
+      font-weight: 900;
+      font-size: 16px;
+      letter-spacing: -0.5px;
+      color: #ffffff;
+    }
+    .logo span {
+      color: #a855f7;
+    }
+    .badge-status {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .connected {
+      background: rgba(16, 185, 129, 0.15);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .disconnected {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+      font-size: 12px;
+    }
+    .card-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #94a3b8;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .card-value {
+      font-weight: 700;
+      color: #f1f5f9;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border-radius: 10px;
+      border: none;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+      color: white;
+      box-shadow: 0 4px 12px rgba(168, 85, 247, 0.3);
+    }
+    .btn-primary:hover {
+      brightness: 1.1;
+      transform: translateY(-1px);
+    }
+    .btn-secondary {
+      background: #334155;
+      color: #f8fafc;
+      border: 1px solid #475569;
+    }
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.18);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+    .control-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .control-row .btn {
+      flex: 1;
+      padding: 8px;
+    }
+    .connection-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .connection-item {
+      padding: 7px;
+      border-radius: 7px;
+      background: #0f172a;
+      color: #94a3b8;
+      border: 1px solid #334155;
+      text-align: center;
+      font-size: 10px;
+    }
+    .connection-item.ready { color: #6ee7b7; border-color: rgba(16, 185, 129, .55); }
+    .connection-item.login { color: #fcd34d; border-color: rgba(245, 158, 11, .55); }
+    .footer {
+      margin-top: 12px;
+      text-align: center;
+      font-size: 10px;
+      color: #64748b;
+    }
+    .tabs {
+      display: flex;
+      margin-bottom: 12px;
+      border-bottom: 1px solid #1e293b;
+    }
+    .tab {
+      flex: 1;
+      text-align: center;
+      padding: 8px 0;
+      font-size: 12px;
+      font-weight: 700;
+      color: #64748b;
+      cursor: pointer;
+      position: relative;
+      transition: color 0.2s;
+    }
+    .tab.active {
+      color: #f8fafc;
+    }
+    .tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: #a855f7;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    input[type="text"], select {
+      width: 100%;
+      padding: 8px;
+      border-radius: 6px;
+      background: #0f172a;
+      color: #f8fafc;
+      border: 1px solid #334155;
+      font-size: 11px;
+      margin-top: 4px;
+    }
+    .option-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .option-label {
+      color: #94a3b8;
+      font-size: 10px;
+    }
+    .result-link {
+      display: block;
+      padding: 8px;
+      margin-top: 6px;
+      border: 1px solid rgba(34, 211, 238, .35);
+      border-radius: 8px;
+      background: rgba(8, 145, 178, .12);
+      color: #67e8f9;
+      text-decoration: none;
+      font-size: 11px;
+      font-weight: 700;
+      text-align: center;
+    }
+    .upload-area {
+      border: 1px dashed #334155;
+      border-radius: 6px;
+      padding: 16px;
+      text-align: center;
+      margin-top: 8px;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .upload-area:hover {
+      border-color: #a855f7;
+      color: #a855f7;
+    }
+    #imagePreview {
+      margin-top: 8px;
+      text-align: center;
+    }
+    #previewImg {
+      max-width: 100%;
+      max-height: 150px;
+      border-radius: 6px;
+      object-fit: contain;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: #0f172a;
+      border-radius: 3px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #a855f7, #ec4899);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+    .progress-step {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .progress-step.active {
+      color: #f8fafc;
+    }
+    .progress-step.done {
+      color: #10b981;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">AFF <span>HUB</span></div>
+    <div id="statusBadge" class="badge-status disconnected">
+      <span class="dot"></span>
+      <span id="statusText">Not Connected</span>
+    </div>
+  </div>
+
+  <div id="license-gate" style="display: none; margin-bottom: 12px;">
+    <div class="card">
+      <div class="card-title">KÍCH HOẠT BẢN QUYỀN</div>
+      <input id="licenseKeyInput" type="text" placeholder="AFF-XXXX-XXXX-XXXX" />
+      <button id="activateLicenseBtn" class="btn btn-primary" style="margin-top: 8px;">Kích hoạt</button>
+      <div id="licenseMessage" style="font-size: 11px; margin-top: 8px; text-align: center;"></div>
+    </div>
+  </div>
+
+  <div id="main-content" style="display: none;">
+    <div class="tabs">
+      <div class="tab active" data-tab="tab-scan">⚡ Quét Shop</div>
+      <div class="tab" data-tab="tab-video">🎬 Video AI</div>
+    </div>
+
+  <div id="tab-scan" class="tab-content active">
+    <div class="card">
+      <div class="card-title">BẢN QUYỀN</div>
+      <div id="licenseInfo" style="font-size: 11px; margin-bottom: 8px; color: #94a3b8;">Đang tải...</div>
+      <button id="removeLicenseBtn" class="btn btn-danger" style="padding: 6px;">Xóa License</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Trang hiện tại</div>
+      <div id="currentPage" class="card-value">Đang kiểm tra...</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Thiết bị & Nhịp tim</div>
+      <div id="deviceToken" class="card-value">Device ID: Pairing...</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Server Đích</div>
+      <select id="serverSelect" style="width: 100%; padding: 6px; border-radius: 6px; background: #0f172a; color: #f8fafc; border: 1px solid #334155; font-size: 11px; font-weight: bold; cursor: pointer;">
+        <option value="https://affnhanh.vercel.app">🌐 Server Chính (https://affnhanh.vercel.app)</option>
+        <option value="http://localhost:3000">💻 Localhost (Dev Test)</option>
+      </select>
+    </div>
+
+    <button id="scanBtn" class="btn btn-primary">
+      ⚡ QUÉT SHOP NÀY VỀ AFF HUB
+    </button>
+  </div>
+
+  <div id="tab-video" class="tab-content">
+    <!-- ẢNH SẢN PHẨM - keep existing image input + upload area + preview -->
+    <div class="card">
+      <div class="card-title">ẢNH SẢN PHẨM</div>
+      <input id="videoImageUrl" type="text" placeholder="Paste URL ảnh sản phẩm..." />
+      <input id="videoProductUrl" type="text" placeholder="Link sản phẩm Shopee/TikTok (để lấy mô tả chi tiết)" />
+      <div class="upload-area" id="uploadArea">
+        <span>📷 Hoặc kéo thả ảnh vào đây</span>
+      </div>
+      <div id="imagePreview" style="display:none;">
+        <img id="previewImg" />
+      </div>
+    </div>
+
+    <!-- LINK TRỢ LÝ CHATGPT (NEW) -->
+    <div class="card">
+      <div class="card-title">🤖 LINK TRỢ LÝ CHATGPT</div>
+      <input id="chatgptUrl" type="text" placeholder="https://chatgpt.com/g/g-xxxxx" />
+      <div style="font-size: 10px; color: #64748b; margin-top: 4px;">Paste link GPT trợ lý phân tích sản phẩm</div>
+    </div>
+
+    <!-- LINK GOOGLE FLOW (thay Kling) -->
+    <div class="card">
+      <div class="card-title">🎬 LINK GOOGLE FLOW</div>
+      <input id="flowUrl" type="text" placeholder="https://labs.google/fx/tools/flow/project/..." value="https://labs.google/fx/tools/flow" />
+      <div style="font-size: 10px; color: #64748b; margin-top: 4px;">Nên dùng link dự án Flow. Nếu dùng trang chính, extension sẽ tạo dự án mới.</div>
+      <div class="option-grid">
+        <label class="option-label">Ảnh tham chiếu
+          <select id="flowReferenceMode">
+            <option value="ingredient">Thành phần</option>
+            <option value="frame">Khung hình</option>
+          </select>
+        </label>
+        <label class="option-label">Tỷ lệ
+          <select id="flowAspectRatio">
+            <option value="9:16">9:16 dọc</option>
+            <option value="16:9">16:9 ngang</option>
+          </select>
+        </label>
+        <label class="option-label">Thời lượng
+          <select id="flowDuration">
+            <option value="8">8 giây</option>
+            <option value="10">10 giây</option>
+            <option value="6">6 giây</option>
+            <option value="4">4 giây</option>
+          </select>
+        </label>
+        <label class="option-label">Số kết quả
+          <select disabled title="Cố định x1 để tránh tốn gấp đôi credit">
+            <option>x1</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">TRẠNG THÁI ĐĂNG NHẬP</div>
+      <div class="connection-grid">
+        <div id="chatgptConnection" class="connection-item">ChatGPT: chưa kiểm tra</div>
+        <div id="flowConnection" class="connection-item">Flow: chưa kiểm tra</div>
+      </div>
+      <button id="checkConnectionsBtn" class="btn btn-secondary" style="margin-top: 8px;">KIỂM TRA KẾT NỐI</button>
+    </div>
+
+    <!-- Generate Button -->
+    <button id="generateVideoBtn" class="btn btn-primary">
+      🚀 TẠO VIDEO AI
+    </button>
+
+    <div id="videoControls" class="control-row" style="display:none;">
+      <button id="pauseVideoBtn" class="btn btn-secondary">⏸ Tạm dừng</button>
+      <button id="cancelVideoBtn" class="btn btn-danger">⏹ Hủy</button>
+    </div>
+
+    <button id="retryVideoBtn" class="btn btn-secondary" style="display:none; margin-top:8px;">↻ THỬ LẠI TỪ BƯỚC LỖI</button>
+
+    <!-- Progress Section - UPDATE with more detailed steps -->
+    <div id="videoProgress" style="display:none;">
+      <div class="card">
+        <div class="card-title">TIẾN TRÌNH</div>
+        <div id="progressSteps">
+          <div class="progress-step" id="step-analyze">⏳ Bước 1: Lấy chi tiết sàn & phân tích ảnh</div>
+          <div class="progress-step" id="step-prompt">⏳ Bước 2: Tách prompt video</div>
+          <div class="progress-step" id="step-video1">⏳ Bước 3: Tạo video 1 trên Google Flow</div>
+          <div class="progress-step" id="step-video2">⏳ Bước 4: Tạo video 2 trên Google Flow</div>
+          <div class="progress-step" id="step-merge">⏳ Bước 5: Ghép video</div>
+        </div>
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+        <div id="progressText" style="font-size: 11px; color: #94a3b8; margin-top: 6px;">Đang khởi tạo...</div>
+        <div id="productDetailsInfo" style="display:none; font-size:10px; color:#67e8f9; margin-top:6px;"></div>
+      </div>
+    </div>
+
+    <!-- Result Section - keep as-is -->
+    <div id="videoResult" style="display:none;">
+      <div class="card">
+        <div class="card-title">KẾT QUẢ</div>
+        <video id="resultVideo" controls style="width:100%; border-radius: 8px;"></video>
+        <div id="flowResultLinks"></div>
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+          <button id="downloadVideoBtn" class="btn" style="flex:1; background: #10b981; color: white;">⬇️ Tải Video</button>
+          <button id="newVideoBtn" class="btn" style="flex:1; background: #1e293b; color: #f8fafc; border: 1px solid #334155;">🔄 Tạo Mới</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  <div class="footer">
+    AFF HUB Chrome Extension Bridge v1.8.2
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

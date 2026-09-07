@@ -1,6 +1,7 @@
-import { db } from '@/lib/db';
+import { db } from '../db';
 
 export const DEFAULT_FLOW_TEMPLATE_ID = 'a1b2c3d4-e5f6-4a5b-8c7d-e9f0a1b2c3d4';
+export const BATCH_FACEBOOK_TEMPLATE_ID = 'de932561-50de-45ac-85da-480448745dec';
 
 export const templates = [
   {
@@ -52,6 +53,18 @@ export const templates = [
     ],
   },
 ];
+
+templates.push({
+  id: BATCH_FACEBOOK_TEMPLATE_ID,
+  name: 'Sản phẩm → Video → Facebook',
+  description: 'Mỗi sản phẩm một video, tự gắn link và xếp lịch đăng Facebook.',
+  category: 'video_generation',
+  isSystem: true,
+  steps: [
+    ...templates.find(template => template.id === DEFAULT_FLOW_TEMPLATE_ID)!.steps.filter(step => step.type !== 'notify'),
+    { id: 'facebook-queue', type: 'queue_facebook', name: 'Gắn link và xếp lịch Facebook', config: {}, dependencies: ['step-7'] },
+  ],
+});
 
 let seedPromise: Promise<void> | null = null;
 

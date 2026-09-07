@@ -26,10 +26,11 @@ import { CreativeBlueprintPanel } from '@/components/ai-video/CreativeBlueprintP
 import { FlowRunTracker } from '@/components/ai-video/FlowRunTracker';
 import { VideoPlayer } from '@/components/ai-video/VideoPlayer';
 import { GoogleDrivePanel } from '@/components/ai-video/GoogleDrivePanel';
+import { BatchVideoStudio } from '@/components/ai-video/BatchVideoStudio';
 import { resolveSelectedFlowTemplateId } from '@/lib/flow/template-selection';
 
 type WizardStep = 'form' | 'script' | 'storyboard' | 'generating' | 'complete';
-type Tab = 'create' | 'processing' | 'library';
+type Tab = 'create' | 'batch' | 'processing' | 'library';
 
 export default function AIVideoStudioPage() {
   const router = useRouter();
@@ -189,6 +190,7 @@ export default function AIVideoStudioPage() {
 
   const tabs: { key: Tab; label: string; icon: any; count?: number }[] = [
     { key: 'create', label: 'Tạo Mới', icon: Plus },
+    { key: 'batch', label: 'Hàng Loạt → FB', icon: Workflow },
     { key: 'processing', label: 'Đang Xử Lý', icon: Loader2, count: processingProjects.length },
     { key: 'library', label: 'Thư Viện', icon: Library },
   ];
@@ -236,7 +238,7 @@ export default function AIVideoStudioPage() {
       )}
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 p-1 bg-slate-900/60 rounded-xl border border-slate-800">
+      <div className="flex flex-wrap gap-1 p-1 bg-slate-900/60 rounded-xl border border-slate-800">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           return (
@@ -277,6 +279,7 @@ export default function AIVideoStudioPage() {
       </AnimatePresence>
 
       {/* Content Area */}
+      {activeTab === 'batch' && <BatchVideoStudio />}
       <AnimatePresence mode="wait">
         {/* Tab: Tạo Mới */}
         {activeTab === 'create' && (

@@ -372,6 +372,10 @@ const notify: StepHandler = async (input) => {
 };
 
 export const stepHandlers: Record<string, StepHandler> = {
+  queue_facebook: async (input) => {
+    const { queueBatchFacebook } = await import('./batch');
+    return queueBatchFacebook(input.videoProjectId, input.flowRunId);
+  },
   llm_script,
   llm_storyboard,
   generate_image,

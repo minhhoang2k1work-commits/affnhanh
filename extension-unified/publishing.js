@@ -141,7 +141,7 @@ async function dispatchPublishing(message, sender, fromWorker = false) {
   const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo().catch(() => {}), 20000);
   try {
     const payload = message.payload || {};
-    if (message.operation === 'SCAN_PAGES') return await scanPublishingPages();
+    if (message.operation === 'SCAN_PAGES') return await syncPublishingAssets();
     if (message.operation === 'IDENTITY') return { success: true, ...await publishingWorkerFetch('identity') };
     if (message.operation === 'CHECK') {
       publishingPage(payload);

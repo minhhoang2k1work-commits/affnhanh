@@ -1,4 +1,4 @@
-importScripts('product-collector.js', 'industry-prompt.js', 'publishing.js', 'publishing-worker.js');
+importScripts('product-collector.js', 'industry-prompt.js', 'publishing.js', 'publishing-assets.js', 'publishing-worker.js');
 // AFF HUB Chrome Extension - Background Service Worker
 
 const DEFAULT_SERVER = 'https://affnhanh.vercel.app';

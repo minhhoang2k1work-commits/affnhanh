@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { authenticatePublisher, claimPost, PublishingError, reportPost } from '@/lib/publishing/manager';
+import { authenticatePublisher, claimPost, PublishingError, reportPost, syncPublisherPages } from '@/lib/publishing/manager';
 import { publishingFailure } from '@/lib/publishing/http';
 import { publishingHistory } from '@/lib/publishing/history';
 
@@ -8,6 +8,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const device = await authenticatePublisher(body);
+    if (body.operation === 'sync_pages') return NextResponse.json(await syncPublisherPages(device.id, device.userId, body.pages));
     if (body.operation === 'history') return NextResponse.json(await publishingHistory(device.id, device.userId, body));
     if (body.operation === 'identity') return NextResponse.json({ deviceId: device.id });
     if (body.operation === 'claim') return NextResponse.json({ job: await claimPost(device.id, device.userId) });

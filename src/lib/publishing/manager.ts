@@ -39,6 +39,25 @@ export async function saveChannel(userId: string, body: Record<string, unknown>)
   });
 }
 
+export async function syncPublisherPages(deviceId: string, userId: string, input: unknown) {
+  if (!Array.isArray(input) || !input.length || input.length > 100) throw new PublishingError('Danh sách Page không hợp lệ.');
+  const pages = input.map(page => {
+    if (!page || typeof page.pageId !== 'string' || !/^\d{5,30}$/.test(page.pageId) || typeof page.pageName !== 'string' || !page.pageName.trim() || page.pageName.length > 200) throw new PublishingError('Tên hoặc ID Page không hợp lệ.');
+    return { pageId: page.pageId as string, name: (page.pageName as string).trim() };
+  });
+  return publishingTransaction(async tx => {
+    const channels = [];
+    for (const page of pages) {
+      const existing = await tx.publishingChannel.findUnique({ where: { userId_pageId: { userId, pageId: page.pageId } } });
+      // Do not reassign an existing channel, invalidate schedules, or enable publishing during discovery.
+      if (existing) { channels.push({ id: existing.id, pageId: existing.pageId, existing: true, otherDevice: existing.deviceId !== deviceId }); continue; }
+      const created = await tx.publishingChannel.create({ data: { ...page, userId, deviceId, profileName: `Chrome ${deviceId.slice(0, 8)}`, slots: ['09:00', '19:00'], graceMinutes: 15, paused: true, verifiedAt: null } });
+      channels.push({ id: created.id, pageId: created.pageId, existing: false, otherDevice: false });
+    }
+    return { channels };
+  });
+}
+
 export async function createPosts(userId: string, body: Record<string, unknown>) {
   const copy = parseReelCopy(JSON.stringify(body.copy));
   const affiliateUrl = typeof body.affiliateUrl === 'string' ? body.affiliateUrl : '';

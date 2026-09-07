@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { requestPublishing } from '@/lib/publishing/extension';
 
-export function PublishingPageScanner({ onSelect }: { onSelect: (page: { pageId: string; name: string; deviceId: string }) => void }) {
+export function PublishingPageScanner({ onSelect, onSynced }: { onSelect: (page: { pageId: string; name: string; deviceId: string }) => void; onSynced: () => void }) {
   const [pages, setPages] = useState<{ pageId: string; pageName: string }[]>([]);
   const [deviceId, setDeviceId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -14,10 +14,11 @@ export function PublishingPageScanner({ onSelect }: { onSelect: (page: { pageId:
         const result = await requestPublishing('SCAN_PAGES');
         const found = Array.isArray(result.pages) ? result.pages.filter((p: { pageId?: string; pageName?: string }) => /^\d{5,30}$/.test(p.pageId || '') && typeof p.pageName === 'string') : [];
         setPages(found); setDeviceId(String(result.deviceId || '')); setMessage(String(result.message || `Tìm thấy ${found.length} Page.`));
+        onSynced();
       } catch (error) { setMessage(error instanceof Error ? error.message : 'Không quét được Page.'); }
       finally { setBusy(false); }
-    }}>{busy ? 'Đang quét…' : 'Quét Page từ Chrome'}</button>
-    <p role="status" className="text-xs text-slate-400">{message || 'Lấy Page từ Meta Business Suite đang đăng nhập trong hồ sơ Chrome này.'}</p>
+    }}>{busy ? 'Đang đồng bộ Page…' : 'Đồng bộ Page từ Meta Business Suite'}</button>
+    <p role="status" className="text-xs text-slate-400">{message || 'Extension tự mở Meta, chọn từng Page để lấy ID và lưu về AFF. Giữ Chrome mở; lượt quét có thể mất khoảng 2 phút.'}</p>
     {pages.length > 0 && <div className="max-h-72 overflow-auto space-y-2">{pages.map(page => <button type="button" key={page.pageId} disabled={!deviceId} onClick={() => onSelect({ pageId: page.pageId, name: page.pageName, deviceId })} className="block w-full rounded-lg border border-slate-700 p-3 text-left text-sm text-white hover:bg-slate-800">{page.pageName}<span className="block text-xs text-slate-400">ID: {page.pageId} · Chọn Page này</span></button>)}</div>}
   </section>;
 }

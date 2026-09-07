@@ -1,4 +1,4 @@
-importScripts('product-collector.js', 'industry-prompt.js', 'publishing.js', 'publishing-assets.js', 'publishing-worker.js');
+importScripts('product-collector.js', 'industry-prompt.js', 'publishing.js', 'publishing-worker.js');
 // =============================================================================
 // AutoFlow Hub — Unified Background Service Worker (v2.3.0)
 //

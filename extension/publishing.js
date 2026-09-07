@@ -141,7 +141,7 @@ async function dispatchPublishing(message, sender, fromWorker = false) {
   const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo().catch(() => {}), 20000);
   try {
     const payload = message.payload || {};
-    if (message.operation === 'SCAN_PAGES') return await syncPublishingAssets();
+    if (message.operation === 'SCAN_PAGES') throw new Error('Đã bỏ quét Page. Nhập tên và ID trong Danh sách Page trên AFF.');
     if (message.operation === 'IDENTITY') return { success: true, ...await publishingWorkerFetch('identity') };
     if (message.operation === 'CHECK') {
       publishingPage(payload);

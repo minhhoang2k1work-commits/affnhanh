@@ -7,6 +7,7 @@ import { requestPublishing } from '@/lib/publishing/extension';
 import { parseReelCopy } from '@/lib/publishing/reels';
 import { fromVietnamTime, POST_LABELS, toVietnamTime } from '@/lib/publishing/schedule';
 import { PublishingMediaImport } from '@/components/ai-video/PublishingMediaImport';
+import { PublishingPageScanner } from '@/components/ai-video/PublishingPageScanner';
 
 type Channel = { id: string; pageId: string; name: string; deviceId: string; profileName: string; paused: boolean; slots: string[]; graceMinutes: number; verifiedAt: string | null };
 type Post = { id: string; projectId: string; channelId: string; title: string; caption: string; hashtags: string[]; affiliateUrl: string; status: string; scheduledAt: string | null; createdAt: string; updatedAt: string; permalink: string | null; error: string | null; events: { id: string; status: string; message: string; createdAt: string }[] };
@@ -118,6 +119,7 @@ export default function PublishingManager() {
       })}</div>
       <form className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-3" onSubmit={e => { e.preventDefault(); work('Đang lưu kênh…', async () => { await api('/api/publishing', { kind: 'channel', ...channelForm, id: channelForm.id || undefined, slots: channelForm.slotsText.split(',').map(s => s.trim()).filter(Boolean) }); setChannelForm(initialChannel); setNotice('Đã lưu kênh. Kênh mới hoặc đổi danh tính cần được kiểm tra trước khi bật tự đăng.'); }); }}>
         <h2 className="font-semibold text-white">{channelForm.id ? 'Chỉnh cấu hình Page' : 'Thêm Page'}</h2>
+        <PublishingPageScanner onSelect={page => { setChannelForm({ ...initialChannel, ...page, profileName: 'Chrome hiện tại' }); setNotice('Đã điền Page đã chọn. Kiểm tra tên, ID rồi bấm lưu kênh.'); }} />
         <button type="button" className={btn} disabled={!!busy} onClick={() => work('Đang nhận diện extension…', async () => { const result = await requestPublishing('IDENTITY'); setChannelForm(c => ({ ...c, deviceId: String(result.deviceId) })); setNotice('Đã chọn extension của hồ sơ Chrome hiện tại.'); })}>Dùng hồ sơ Chrome hiện tại</button>
         <label className="block text-sm text-slate-300">Thiết bị extension<select className={field} required value={channelForm.deviceId} onChange={e => setChannelForm({ ...channelForm, deviceId: e.target.value })}><option value="">Chọn thiết bị</option>{data.devices.map(d => <option key={d.id} value={d.id}>{d.id.slice(0, 8)} · {online(d) ? 'đang trực' : 'chưa trực'}</option>)}</select></label>
         <label className="block text-sm text-slate-300">Tên hồ sơ Chrome<input className={field} required maxLength={100} placeholder="VD: Facebook công việc" value={channelForm.profileName} onChange={e => setChannelForm({ ...channelForm, profileName: e.target.value })} /></label>

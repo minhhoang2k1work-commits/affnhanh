@@ -1,5 +1,44 @@
 // Facebook Reels adapter. Only explicit requests from the paired AFF origin are accepted.
 let publishingBusy = false;
+// Read only Page links exposed by Meta's UI, without private APIs or session tokens.
+function collectPublishingPages() {
+  if (location.origin !== 'https://business.facebook.com') throw new Error('Chỉ quét trong Meta Business Suite.');
+  const pages = new Map();
+  for (const link of document.querySelectorAll('a[href]')) {
+    // Page entries carry an avatar; ordinary Suite navigation also contains asset_id.
+    if (!link.querySelector('img, [role="img"]')) continue;
+    const box = link.getBoundingClientRect();
+    if (!box.width || !box.height || getComputedStyle(link).visibility === 'hidden') continue;
+    const url = new URL(link.href, location.href);
+    if (url.origin !== location.origin) continue;
+    const pageId = url.searchParams.get('asset_id');
+    if (!/^\d{5,30}$/.test(pageId || '')) continue;
+    const pageName = (link.getAttribute('aria-label') || link.innerText || '').trim().replace(/\s+/g, ' ');
+    if (!pageName || pageName.length > 200 || /^(home|trang chủ|inbox|hộp thư|content|nội dung|insights|thông tin chi tiết|planner|công cụ lập kế hoạch|all tools|tất cả công cụ|settings|cài đặt|create reel|tạo thước phim)$/i.test(pageName)) continue;
+    if (!pages.has(pageId)) pages.set(pageId, { pageId, pageName });
+  }
+  return [...pages.values()].slice(0, 100);
+}
+
+async function scanPublishingPages() {
+  const identity = await publishingWorkerFetch('identity');
+  const tabs = await chrome.tabs.query({ url: 'https://business.facebook.com/*' });
+  if (!tabs.length) {
+    await chrome.tabs.create({ url: 'https://business.facebook.com/latest/home/', active: true });
+    return { success: true, deviceId: identity.deviceId, pages: [], message: 'Đã mở Meta Business Suite. Đăng nhập, mở danh sách chuyển Page ở góc trên bên trái rồi quay lại bấm Quét Page.' };
+  }
+  const pages = new Map();
+  let readable = 0;
+  for (const tab of tabs.slice(0, 10)) {
+    try {
+      const result = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: collectPublishingPages });
+      readable++;
+      for (const page of result[0]?.result || []) if (!pages.has(page.pageId)) pages.set(page.pageId, page);
+    } catch { /* Navigation or inaccessible tab: continue scanning the remaining tabs. */ }
+  }
+  if (!readable) throw new Error('Chưa đọc được Meta Business Suite. Chờ trang tải xong rồi quét lại.');
+  return { success: true, deviceId: identity.deviceId, pages: [...pages.values()].slice(0, 100), message: 'Chỉ liệt kê các Page có liên kết ID đang hiển thị. Nếu thiếu, mở danh sách chuyển Page trong Meta Business Suite, cuộn danh sách rồi quét lại. Kiểm tra tên và ID trước khi lưu.' };
+}
 const publishingSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function publishingPage(payload) {
@@ -102,6 +141,7 @@ async function dispatchPublishing(message, sender, fromWorker = false) {
   const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo().catch(() => {}), 20000);
   try {
     const payload = message.payload || {};
+    if (message.operation === 'SCAN_PAGES') return await scanPublishingPages();
     if (message.operation === 'IDENTITY') return { success: true, ...await publishingWorkerFetch('identity') };
     if (message.operation === 'CHECK') {
       publishingPage(payload);

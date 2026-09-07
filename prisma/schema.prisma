@@ -32,6 +32,8 @@ model User {
   flowRuns          FlowRun[]
   industryWorkspaces IndustryWorkspace[]
   telegramCommands  TelegramCommand[]
+  publishingChannels PublishingChannel[]
+  publishingPosts    PublishingPost[]
 }
 
 model TelegramCommand {
@@ -60,6 +62,7 @@ model IndustryWorkspace {
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name           String
   basePrompt     String   @default("") @db.Text
+  profile        Json     @default("{}")
   referenceLinks Json     @default("[]")
   chatgptUrl     String   @default("https://chatgpt.com/")
   flowUrl        String   @default("")
@@ -217,9 +220,77 @@ model ExtensionDevice {
   lastSeenAt       DateTime @default(now())
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+  publishingChannels PublishingChannel[]
+  publishingLease String?
+  publishingLeaseUntil DateTime?
+  publishingLastSeenAt DateTime?
 
   @@index([userId])
   @@index([deviceToken])
+}
+
+model PublishingChannel {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pageId      String
+  name        String
+  deviceId    String
+  device      ExtensionDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  profileName String
+  paused      Boolean  @default(true)
+  slots       Json     @default("[\"09:00\",\"19:00\"]")
+  graceMinutes Int     @default(15)
+  verifiedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  posts       PublishingPost[]
+
+  @@unique([userId, pageId])
+  @@index([deviceId, paused])
+}
+
+model PublishingPost {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channelId   String
+  channel     PublishingChannel @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  projectId   String
+  videoUrl    String
+  title       String
+  caption     String   @db.Text
+  hashtags    Json     @default("[]")
+  affiliateUrl String  @default("")
+  text        String   @db.Text
+  clientKey   String
+  status      String   @default("draft")
+  scheduledAt DateTime?
+  leaseToken  String?
+  leaseUntil  DateTime?
+  attempts    Int      @default(0)
+  submittedAt DateTime?
+  publishedAt DateTime?
+  permalink   String?
+  error       String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  events      PublishingEvent[]
+
+  @@unique([userId, clientKey])
+  @@index([status, scheduledAt])
+  @@index([channelId, scheduledAt])
+}
+
+model PublishingEvent {
+  id        String   @id @default(uuid())
+  postId    String
+  post      PublishingPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  status    String
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([postId, createdAt])
 }
 
 model ExtensionJob {

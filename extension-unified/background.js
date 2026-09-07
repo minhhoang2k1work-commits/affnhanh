@@ -1,4 +1,4 @@
-importScripts('product-collector.js', 'industry-prompt.js');
+importScripts('product-collector.js', 'industry-prompt.js', 'publishing.js', 'publishing-worker.js');
 // =============================================================================
 // AutoFlow Hub — Unified Background Service Worker (v2.3.0)
 //
@@ -36,7 +36,7 @@ const CONFIG = {
   DESKTOP_RECONNECT_MS: 5_000,
 
   // AFF Web App connections
-  AFF_DEFAULT_SERVER: "https://affnhanh.vercel.app",
+  AFF_DEFAULT_SERVER: "http://localhost:3000",
   AFF_HEARTBEAT_MS: 15_000,
   AFF_POLL_INTERVAL_MS: 3_000,
 

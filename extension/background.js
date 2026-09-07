@@ -1,4 +1,4 @@
-importScripts('product-collector.js', 'industry-prompt.js');
+importScripts('product-collector.js', 'industry-prompt.js', 'publishing.js', 'publishing-worker.js');
 // AFF HUB Chrome Extension - Background Service Worker
 
 const DEFAULT_SERVER = 'https://affnhanh.vercel.app';
@@ -331,7 +331,7 @@ async function clickTrustedPoint(tabId, x, y) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (['AFF_COLLECT_PRODUCT', 'AFF_SEND_INDUSTRY_PROMPT'].includes(message.action)) return false;
+  if (['AFF_COLLECT_PRODUCT', 'AFF_SEND_INDUSTRY_PROMPT', 'AFF_PUBLISH'].includes(message.action)) return false;
   (async () => {
     const { serverUrl } = await getConfig();
     if (message.action === 'FLOW_CLIPBOARD_PASTE') {

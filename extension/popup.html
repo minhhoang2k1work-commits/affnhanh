@@ -267,7 +267,7 @@
     }
   </style>
 </head>
-<body>
+<body><div style="padding:12px 16px"><button id="openPublishingPanel" disabled style="display:block;width:100%;border:0;cursor:pointer;text-align:center;padding:12px;background:#7131be;color:white;border-radius:10px;font-weight:600">Lịch sử đăng video ↗</button><p id="publishingPanelStatus" role="status" style="font-size:12px;color:#fda4af"></p></div>
   <div class="header">
     <div class="logo">AFF <span>HUB</span></div>
     <div id="statusBadge" class="badge-status disconnected">
@@ -312,7 +312,7 @@
       <div class="card-title">Server Đích</div>
       <select id="serverSelect" style="width: 100%; padding: 6px; border-radius: 6px; background: #0f172a; color: #f8fafc; border: 1px solid #334155; font-size: 11px; font-weight: bold; cursor: pointer;">
         <option value="https://affnhanh.vercel.app">🌐 Server Chính (https://affnhanh.vercel.app)</option>
-        <option value="http://localhost:3000">💻 Localhost (Dev Test)</option>
+        <option value="http://127.0.0.1:3107">💻 AFF Local · Đăng bài (3107)</option><option value="http://localhost:3000">💻 Localhost (Dev Test)</option>
       </select>
     </div>
 
@@ -435,6 +435,6 @@
     AFF HUB Chrome Extension Bridge v1.8.2
   </div>
 
-  <script src="popup.js"></script>
+  <script src="popup.js"></script><script src="publishing-panel.js"></script>
 </body>
 </html>

@@ -332,7 +332,7 @@ function visibleChatGPTError() {
   ) || null;
 }
 
-async function waitForCompletion(initialMessageCount, timeout = 480000) {
+async function waitForCompletion(initialMessageCount, timeout = 480000, allowPromptTag = true) {
   const startedAt = Date.now();
   let stableText = '';
   let stableSince = 0;
@@ -347,7 +347,7 @@ async function waitForCompletion(initialMessageCount, timeout = 480000) {
     if (messages.length > initialMessageCount && text) {
       if (text === stableText) {
         const stableFor = Date.now() - stableSince;
-        if (/\[\/PROMPT2\]/i.test(text) && (!generating || stableFor > 1000)) return text;
+        if (allowPromptTag && /\[\/PROMPT2\]/i.test(text) && (!generating || stableFor > 1000)) return text;
         if (!generating && stableFor > 10000) return text;
       } else {
         stableText = text;
@@ -356,7 +356,7 @@ async function waitForCompletion(initialMessageCount, timeout = 480000) {
     }
     await sleep(500);
   }
-  throw new Error('ChatGPT phản hồi quá thời gian 8 phút hoặc chưa trả xong thẻ [/PROMPT2].');
+  throw new Error('ChatGPT chưa trả lời xong trong thời gian chờ. Kiểm tra cuộc trò chuyện trước khi gửi lại.');
 }
 
 function getPageStatus() {
@@ -394,19 +394,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'CHATGPT_SEND_PROMPT') {
     (async () => {
       try {
+        const checkProject = () => {
+          if (!message.expectedProject) return;
+          const url = new URL(location.href);
+          const key = url.pathname.match(/^\/g\/(g-p-[a-zA-Z0-9]+)(?:-[^/]+)?\/project\/?$/)?.[1];
+          if (url.origin !== 'https://chatgpt.com' || key !== message.expectedProject) throw new Error('Tab không còn ở đúng dự án ngành hàng. Chưa gửi nội dung. Mở lại dự án rồi thử lại.');
+        };
+        checkProject();
         const editor = await waitForElement(CHATGPT_SELECTORS.editor, 15000);
         if (document.querySelector(CHATGPT_SELECTORS.stopButton)) throw new Error('ChatGPT đang trả lời. Hãy đợi xong trước khi gửi.');
         if ((editor.value || editor.innerText || '').trim()) throw new Error('Ô nhập ChatGPT đang có bản nháp. Hãy gửi hoặc lưu bản nháp trước.');
         if (typeof message.prompt !== 'string' || !message.prompt.trim()) throw new Error('Prompt trống.');
         operationControl = { cancelled: false, paused: false };
+        const initialAssistantCount = document.querySelectorAll(CHATGPT_SELECTORS.assistantMessage).length;
         const count = document.querySelectorAll('[data-message-author-role="user"]').length;
+        checkProject();
         setEditorText(message.prompt);
         await sleep(500);
+        checkProject();
         await clickSend();
         const deadline = Date.now() + 15000;
         while (Date.now() < deadline) {
           if (document.querySelectorAll('[data-message-author-role="user"]').length > count) {
-            sendResponse({ success: true, url: location.href }); return;
+            const responseText = message.waitForResponse === true ? await waitForCompletion(initialAssistantCount, 210000, false) : undefined;
+            sendResponse({ success: true, url: location.href, ...(responseText === undefined ? {} : { responseText }) }); return;
           }
           const error = visibleChatGPTError(); if (error) throw new Error(error);
           await sleep(300);

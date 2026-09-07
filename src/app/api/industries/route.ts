@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db, getOrCreateUser } from '@/lib/db';
-import { validateIndustry } from '@/lib/products/industry';
+import { validateIndustry, chatgptProjectKey } from '@/lib/products/industry';
 
 export async function GET() {
   try {
@@ -23,6 +23,14 @@ export async function POST(request: Request) {
     if (body.id != null && typeof body.id !== 'string') return NextResponse.json({ error: 'ID không hợp lệ.' }, { status: 400 });
     const existing = body.id ? await db.industryWorkspace.findFirst({ where: { id: body.id, userId: user.id } }) : null;
     if (body.id && !existing) return NextResponse.json({ error: 'Không tìm thấy ngành hàng.' }, { status: 404 });
+    // Older clients may omit profile; do not erase the saved dossier on their updates.
+    if (existing && body.profile == null) data.profile = validateIndustry({ ...existing, profile: existing.profile }).profile;
+    const projectKey = chatgptProjectKey(data.chatgptUrl);
+    if (projectKey) {
+      const linked = await db.industryWorkspace.findMany({ where: { userId: user.id, ...(existing ? { id: { not: existing.id } } : {}) }, select: { name: true, chatgptUrl: true } });
+      const conflict = linked.find(w => chatgptProjectKey(w.chatgptUrl) === projectKey);
+      if (conflict) return NextResponse.json({ error: `Dự án ChatGPT này đang dùng cho ngành ${conflict.name}. Hãy gắn dự án riêng để không trộn thông tin.` }, { status: 409 });
+    }
     const industry = await db.$transaction(async tx => {
       if (existing) {
         const saved = await tx.industryWorkspace.update({ where: { id: existing.id }, data });

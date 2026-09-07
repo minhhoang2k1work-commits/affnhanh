@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { db } from '../db';
-import { buildIndustryPrompt, isServiceUrl } from '../products/industry';
+import { buildIndustryPrompt, isServiceUrl, validateIndustry } from '../products/industry';
 import { AgentCommand, HELP, marketplaceUrl, parseCommand } from './commands';
 import { authorizedMessage, telegramConfig } from './config';
 import { sendTelegramText } from './client';
@@ -50,7 +50,7 @@ async function execute(tx: Prisma.TransactionClient, userId: string, command: Ag
     if (!workspace) throw new Error('Không tìm thấy ngành hàng. Gửi /industries để lấy tên/mã chính xác.');
     const products = await tx.product.findMany({ where: { userId, category: workspace.name }, take: 5, orderBy: { updatedAt: 'desc' } });
     const referenceLinks = Array.isArray(workspace.referenceLinks) ? workspace.referenceLinks.filter((v): v is string => typeof v === 'string') : [];
-    const prompt = buildIndustryPrompt({ ...workspace, referenceLinks }, products, referenceLinks.map(url => ({ url, status: 'Chưa đọc mới; sử dụng hồ sơ sản phẩm đã lưu, không suy đoán nội dung URL.' })));
+    const prompt = buildIndustryPrompt(validateIndustry({ ...workspace, referenceLinks }), products, referenceLinks.map(url => ({ url, status: 'Chưa đọc mới; sử dụng hồ sơ sản phẩm đã lưu, không suy đoán nội dung URL.' })));
     if (action === 'prompt') return { reply: prompt };
     if (!isServiceUrl(workspace.chatgptUrl, 'chatgpt')) throw new Error('Link ChatGPT của ngành hàng không hợp lệ.');
     if (prompt.length > 250000) throw new Error('Prompt quá dài. Giảm dữ liệu hoặc dùng trang Ngành hàng & Prompt để chọn ít sản phẩm hơn.');

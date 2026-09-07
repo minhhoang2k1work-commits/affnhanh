@@ -25,6 +25,8 @@ import { StoryboardTimeline } from '@/components/ai-video/StoryboardTimeline';
 import { FlowDiagram } from '@/components/ai-video/FlowDiagram';
 import { FlowRunTracker } from '@/components/ai-video/FlowRunTracker';
 import { VideoPlayer } from '@/components/ai-video/VideoPlayer';
+import { AutoCutBridgeCard } from '@/components/ai-video/AutoCutBridgeCard';
+import { ReelPublisher } from '@/components/ai-video/ReelPublisher';
 import Link from 'next/link';
 
 export default function VideoProjectDetailPage() {
@@ -177,7 +179,16 @@ export default function VideoProjectDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => {
+              const el = document.getElementById('autocut-bridge-card');
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="px-3.5 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 font-medium text-xs flex items-center gap-1.5 transition-colors"
+          >
+            <Film className="w-3.5 h-3.5" /> AutoCut NLE
+          </button>
           {project.status === 'completed' && project.videoUrl && project.storage?.googleDrive?.url && (
             <a
               href={project.storage.googleDrive.url}
@@ -302,6 +313,17 @@ export default function VideoProjectDetailPage() {
               onDownload={() => window.open(project.videoUrl, '_blank')}
             />
           )}
+
+          {project.status === 'completed' && project.videoUrl && <ReelPublisher key={projectId} projectId={projectId} />}
+
+          {/* AutoCut NLE Bridge */}
+          <div id="autocut-bridge-card">
+            <AutoCutBridgeCard
+              projectId={projectId}
+              project={project}
+              onProjectUpdated={fetchProject}
+            />
+          </div>
 
           {/* Script (if available) */}
           {project.script && project.status !== 'completed' && (

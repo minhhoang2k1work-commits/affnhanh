@@ -1,0 +1,1 @@
+ALTER TABLE "IndustryWorkspace" ADD COLUMN IF NOT EXISTS "profile" JSONB NOT NULL DEFAULT '{}';

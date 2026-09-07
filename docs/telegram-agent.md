@@ -4,6 +4,14 @@ Bản đầu là agent thực thi các lệnh xác định và mẫu câu tiến
 
 ## Kích hoạt trên máy cá nhân
 
+### Cấu hình bằng giao diện (khuyên dùng trên máy này)
+
+Mở **AI & Tự động hóa → Telegram Agent** (`/telegram`) và đăng nhập quản trị. Nhập token từ BotFather, bấm **Kiểm tra kết nối**, nhắn `/start` cho bot rồi bấm **Lấy Telegram ID** và chọn đúng ID của bạn. Giữ AFF User ID đã điền, bấm **Lưu cấu hình → Bật bot**. Khóa kết nối được tạo tự động. Không cần sửa `.env` hoặc chạy `npm run telegram`.
+
+Cấu hình giao diện được mã hóa bằng ENCRYPTION_KEY trong `.sessions/telegram.enc`, ưu tiên hơn các biến TELEGRAM_* trong `.env`. Không đổi ENCRYPTION_KEY khi chưa sao lưu cấu hình. Worker chạy cùng máy chủ Next.js; cần máy chủ Node chạy liên tục, một tiến trình, không dùng chế độ serverless. Sau khi khởi động lại máy chủ, bấm Bật bot lại. Không chạy đồng thời worker dòng lệnh với worker giao diện. Tắt bot ngừng nhận lệnh mới; công việc đã xếp hàng không bị hủy. Việc lưu cấu hình sẽ dừng worker, cần bấm Bật bot lại.
+
+### Dòng lệnh (chỉ khi chưa dùng cấu hình giao diện)
+
 1. Trong Telegram, mở BotFather chính thức và dùng `/newbot` để tạo bot. Lưu bot token vào `.env` tại máy chủ.
 2. Sau khi điền bot token, nhắn `/start` cho bot rồi chạy `npm run telegram:identify` để xem các user ID đã nhắn riêng cho bot; chỉ chọn đúng ID của bạn. Lệnh này chỉ đọc, không thực thi tin nhắn. Agent chỉ chấp nhận tin nhắn riêng có `from.id` và `chat.id` trùng ID trong danh sách cho phép. Không nhận username thay ID, tin chuyển tiếp, tin bot, nhóm hoặc tin cũ hơn 15 phút.
 3. Mở `/telegram`, đăng nhập quản trị để xem AFF User ID và kiểm tra trạng thái cấu hình.

@@ -53,9 +53,17 @@
         return;
       }
 
+      if (event.data?.type === 'AFF_PUBLISH' && event.origin === location.origin) {
+        const requestId = event.data.requestId;
+        chrome.runtime.sendMessage({ action: 'AFF_PUBLISH', operation: event.data.action, payload: event.data.payload }, result => {
+          const error = chrome.runtime.lastError?.message;
+          window.postMessage({ type: 'AFF_PUBLISH_RESULT', requestId, ...(result || { success: false, error: error || 'Extension chưa hỗ trợ đăng Reels. Hãy cập nhật extension.' }) }, location.origin);
+        });
+        return;
+      }
       if (event.data?.type === 'AFF_SEND_INDUSTRY_PROMPT') {
         const requestId = event.data.requestId;
-        chrome.runtime.sendMessage({ action: 'AFF_SEND_INDUSTRY_PROMPT', url: event.data.url, prompt: event.data.prompt }, result => {
+        chrome.runtime.sendMessage({ action: 'AFF_SEND_INDUSTRY_PROMPT', url: event.data.url, prompt: event.data.prompt, requireProject: event.data.requireProject === true }, result => {
           window.postMessage({ type: 'AFF_INDUSTRY_PROMPT_SENT', requestId, ...(result || { success: false, error: chrome.runtime.lastError?.message }) }, window.location.origin);
         });
       }

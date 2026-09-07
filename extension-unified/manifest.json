@@ -1,10 +1,9 @@
 {
   "manifest_version": 3,
   "name": "AutoFlow Hub — Google Flow & Affiliate Bridge",
-  "version": "2.3.0",
+  "version": "2.7.1",
   "description": "Hợp nhất AutoFlow (Google Flow Automation, ChatGPT Batch) và AFF HUB (Shopee/TikTok Scanner, Affiliate, AI Video). Hỗ trợ Side Panel, CDP Debugger, Offscreen Clipboard.",
   "minimum_chrome_version": "116",
-
   "permissions": [
     "sidePanel",
     "activeTab",
@@ -19,7 +18,6 @@
     "clipboardWrite",
     "unlimitedStorage"
   ],
-
   "host_permissions": [
     "https://labs.google/*",
     "https://flow.google/*",
@@ -42,33 +40,38 @@
     "https://*.tiktokcdn.com/*",
     "https://*.tiktokcdn-eu.com/*",
     "https://*.byteimg.com/*",
-    "https://api.openai.com/*"
+    "https://api.openai.com/*",
+    "https://business.facebook.com/*"
   ],
-
   "background": {
     "service_worker": "background.js"
   },
-
   "side_panel": {
     "default_path": "sidepanel.html"
   },
-
   "action": {
     "default_popup": "popup.html",
     "default_title": "AutoFlow Hub — Side Panel & Settings"
   },
-
   "content_scripts": [
     {
       "_comment": "Google Flow DOM Automation (Isolated World) — từ AutoCut",
-      "matches": ["https://labs.google/fx/*"],
-      "js": ["content-flow-autocut.js"],
+      "matches": [
+        "https://labs.google/fx/*"
+      ],
+      "js": [
+        "content-flow-autocut.js"
+      ],
       "run_at": "document_idle"
     },
     {
       "_comment": "Google Flow Slate.js React Fiber Bypass (MAIN World) — từ AutoCut",
-      "matches": ["https://labs.google/fx/*"],
-      "js": ["flow-bridge.js"],
+      "matches": [
+        "https://labs.google/fx/*"
+      ],
+      "js": [
+        "flow-bridge.js"
+      ],
       "run_at": "document_idle",
       "world": "MAIN"
     },
@@ -80,13 +83,20 @@
         "https://labs.google/*",
         "https://*.labs.google/*"
       ],
-      "js": ["content-flow-aff.js"],
+      "js": [
+        "content-flow-aff.js"
+      ],
       "run_at": "document_idle"
     },
     {
       "_comment": "ChatGPT Web Automation — từ AFF",
-      "matches": ["https://chatgpt.com/*", "https://*.chatgpt.com/*"],
-      "js": ["content-chatgpt.js"],
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://*.chatgpt.com/*"
+      ],
+      "js": [
+        "content-chatgpt.js"
+      ],
       "run_at": "document_idle"
     },
     {
@@ -104,7 +114,9 @@
         "http://127.0.0.1/*",
         "https://*.vercel.app/*"
       ],
-      "js": ["content-marketplace.js"],
+      "js": [
+        "content-marketplace.js"
+      ],
       "run_at": "document_idle"
     }
   ]

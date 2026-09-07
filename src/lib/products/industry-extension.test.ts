@@ -28,6 +28,11 @@ describe('extension project reuse and explicit prompt submission', () => {
       const result = await new Promise<any>(resolve => listener({ action: 'CHATGPT_SEND_PROMPT', prompt: 'My brief' }, {}, resolve));
       expect(result.success).toBe(true);
       expect(send).toHaveBeenCalledTimes(1);
+      context.URL = URL;
+      const wrongProject = await new Promise<any>(resolve => listener({ action: 'CHATGPT_SEND_PROMPT', prompt: 'Private industry brief', expectedProject: 'g-p-other' }, {}, resolve));
+      expect(wrongProject.success).toBe(false);
+      expect(wrongProject.error).toContain('đúng dự án');
+      expect(send).toHaveBeenCalledTimes(1);
       context.waitForElement = async () => ({ value: 'Unsaved draft' });
       const blocked = await new Promise<any>(resolve => listener({ action: 'CHATGPT_SEND_PROMPT', prompt: 'Another brief' }, {}, resolve));
       expect(blocked.success).toBe(false);

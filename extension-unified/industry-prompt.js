@@ -6,6 +6,8 @@ async function dispatchIndustryPrompt(message) {
     try {
       const url = new URL(message.url);
       if (url.protocol !== 'https:' || url.username || url.password || !/^(?:[\w-]+\.)*chatgpt\.com$/.test(url.hostname)) throw new Error('Link ChatGPT không hợp lệ.');
+      const projectKey = url.pathname.match(/^\/g\/(g-p-[a-zA-Z0-9]+)(?:-[^/]+)?\/project\/?$/)?.[1];
+      if (message.requireProject && (!projectKey || url.hostname !== 'chatgpt.com')) throw new Error('Cần link trang dự án ChatGPT của ngành hàng.');
       if (typeof message.prompt !== 'string' || !message.prompt.trim() || message.prompt.length > 250000) throw new Error('Prompt phải có nội dung và tối đa 250.000 ký tự. Hãy giảm số sản phẩm/link nếu quá dài.');
       const existing = (await chrome.tabs.query({})).find(tab => tab.url?.replace(/\/$/, '') === url.href.replace(/\/$/, ''));
       const tab = existing ? await chrome.tabs.update(existing.id, { active: true }) : await chrome.tabs.create({ url: url.href, active: true });
@@ -21,7 +23,7 @@ async function dispatchIndustryPrompt(message) {
       }
       if (!ready) throw new Error('Chưa thấy ô nhập ChatGPT. Nếu link là trang dự án, hãy mở một cuộc trò chuyện trong dự án và lưu link cuộc trò chuyện đó.');
       // Do not retry the send: a lost response must never submit the same prompt twice.
-      const result = await chrome.tabs.sendMessage(tab.id, { action: 'CHATGPT_SEND_PROMPT', prompt: message.prompt });
+      const result = await chrome.tabs.sendMessage(tab.id, { action: 'CHATGPT_SEND_PROMPT', prompt: message.prompt, waitForResponse: message.waitForResponse === true, expectedProject: message.requireProject ? projectKey : undefined });
       return result || { success: false, error: 'Chưa xác nhận được việc gửi. Kiểm tra tab ChatGPT trước khi gửi lại.' };
     } catch (error) { return { success: false, error: error.message }; }
     finally { industryPromptBusy = false; }

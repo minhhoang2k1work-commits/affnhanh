@@ -23,6 +23,7 @@ import {
   Boxes,
   Bot,
   SlidersHorizontal,
+  CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -68,6 +69,7 @@ const navGroups = [
     accent: true,
     items: [
       { name: 'Telegram Agent', href: '/telegram', icon: Bot, badge: 'Agent' },
+      { name: 'Quản Lý Đăng Bài', href: '/publishing', icon: CalendarDays, badge: 'Auto', highlight: true },
       { name: 'AI Video Studio', href: '/ai-video', icon: Clapperboard, badge: 'AI', highlight: true },
       { name: 'Thư Viện Video', href: '/ai-video/library', icon: Film },
       { name: 'Quy trình tự động hóa', href: '/flows', icon: Workflow, badge: 'Auto' },

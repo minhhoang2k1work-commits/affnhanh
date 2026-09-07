@@ -1,6 +1,9 @@
 import { timingSafeEqual } from 'node:crypto';
+import { readTelegramSettings } from './settings';
 
 export function telegramConfig() {
+  const saved = readTelegramSettings();
+  if (saved) return saved;
   return {
     enabled: process.env.TELEGRAM_ENABLED === 'true',
     token: process.env.TELEGRAM_BOT_TOKEN || '',

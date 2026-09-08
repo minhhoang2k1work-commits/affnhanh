@@ -86,7 +86,7 @@ export async function assembleProjectVideo(
     const clipPath = await materializeAsset(scene.videoClipUrl, path.join(directory, `scene-${scene.sceneNumber}-source.mp4`));
     const segmentPath = path.join(directory, `scene-${scene.sceneNumber}-segment.mp4`);
     const duration = Math.max(1, scene.duration || 5);
-    const videoFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black,fps=30,format=yuv420p`;
+    const videoFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black,fps=30,format=yuv420p,tpad=stop_mode=clone:stop_duration=${duration}`;
     const commonOutput = [
       '-map', '[v]', '-map', '1:a:0', '-t', String(duration),
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21',

@@ -108,6 +108,7 @@ export default function AISettingsPage() {
         fetch('/api/ai-browser/status'),
         fetch('/api/ai-providers'),
       ]);
+      if (!browserResponse.ok || !apiResponse.ok) throw new Error('Chưa tải được trạng thái AI. Kiểm tra kết nối rồi tải lại trang.');
       const data = await browserResponse.json();
       const apiData = await apiResponse.json();
       if (data.success && data.statuses) {
@@ -136,7 +137,7 @@ export default function AISettingsPage() {
         });
       }
     } catch (err) {
-      console.error(err);
+      setNotice({ type: 'error', text: 'Chưa tải được trạng thái AI. Kiểm tra kết nối rồi tải lại trang.' });
     }
   };
 
@@ -568,10 +569,10 @@ export default function AISettingsPage() {
                   ) : (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-400">API connection</span>
+                        <span className="text-xs text-slate-400">Thiết lập API</span>
                         {state.apiConnected
-                          ? <span className="text-xs font-bold text-emerald-400">Connected ✅</span>
-                          : <span className="text-xs font-bold text-rose-400">Not Connected</span>}
+                          ? <span className="text-xs font-bold text-violet-300">Đã lưu API key</span>
+                          : <span className="text-xs font-bold text-amber-300">Chưa lưu API key</span>}
                       </div>
                       <div className="space-y-2">
                         <label className="text-xs font-medium text-slate-400">API Key</label>

@@ -1,5 +1,6 @@
 'use client';
 
+import { DataError } from '@/components/ui/DataError';
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { 
@@ -18,7 +19,7 @@ import {
 } from 'lucide-react';
 
 export default function ShopeeSettingsPage() {
-  const [productStatus, setProductStatus] = useState<any | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [affiliateAccount, setAffiliateAccount] = useState<any | null>(null);
   const [testingProduct, setTestingProduct] = useState(false);
   const [testingAffiliate, setTestingAffiliate] = useState(false);
@@ -27,20 +28,16 @@ export default function ShopeeSettingsPage() {
 
   const fetchStatus = async () => {
     try {
-      const summaryRes = await fetch('/api/dashboard/summary');
-      const summaryData = await summaryRes.json();
-      if (summaryData.integrationStatus) {
-        setProductStatus(summaryData.integrationStatus);
-      }
-
       const accRes = await fetch('/api/accounts');
+      if (!accRes.ok) throw new Error();
       const accData = await accRes.json();
+      setLoadError(false);
       if (accData.accounts) {
-        const shopeeAcc = accData.accounts.find((a: any) => a.platform === 'SHOPEE' && a.isDefault) || accData.accounts[0];
+        const shopeeAcc = accData.accounts.find((a: any) => a.platform === 'SHOPEE' && a.isDefault) || accData.accounts.find((a: any) => a.platform === 'SHOPEE');
         setAffiliateAccount(shopeeAcc || null);
       }
     } catch (err) {
-      console.error(err);
+      setLoadError(true);
     }
   };
 
@@ -89,6 +86,7 @@ export default function ShopeeSettingsPage() {
   };
 
   const isAffConnected = Boolean(affiliateAccount);
+  const productLabel = productTestResult?.success && productTestResult?.sampleProductCount > 0 ? 'Đã kiểm tra có sản phẩm' : productTestResult ? 'Chưa xác minh được sản phẩm' : 'Chưa kiểm tra';
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-12">
@@ -110,10 +108,11 @@ export default function ShopeeSettingsPage() {
           className="px-5 py-2.5 rounded-xl gradient-shopee text-white font-extrabold text-xs shadow-glow hover:brightness-110 transition-all flex items-center justify-center gap-2"
         >
           <KeyRound className="w-4 h-4" />
-          <span>CẤU HÌNH CREDENTIALS</span>
+          <span>Cấu hình tài khoản</span>
         </Link>
       </div>
 
+      {loadError && <DataError onRetry={fetchStatus} />}
       {/* Section 1: Real Connection Status Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {/* Source A: Marketplace / Product Data */}
@@ -128,15 +127,15 @@ export default function ShopeeSettingsPage() {
                 <p className="text-xs text-slate-400">Dùng cho: Shop, Product, Ảnh, Giá, Solved, Stock</p>
               </div>
             </div>
-            <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-xs flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Connected
+            <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 font-bold text-xs flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5" /> {productLabel}
             </span>
           </div>
 
           <div className="space-y-2 text-xs p-3.5 rounded-xl bg-slate-950 border border-slate-800">
             <div className="flex justify-between">
               <span className="text-slate-400">Shopee Product Data:</span>
-              <span className="text-emerald-400 font-bold">Connected</span>
+              <span className="text-slate-300 font-bold">{productLabel}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Nguồn API:</span>
@@ -144,7 +143,7 @@ export default function ShopeeSettingsPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Metadata Mode:</span>
-              <span className="text-slate-300 font-mono">isRealData = true</span>
+              <span className="text-slate-300 font-mono">Xác minh qua sản phẩm trả về</span>
             </div>
           </div>
 
@@ -183,7 +182,7 @@ export default function ShopeeSettingsPage() {
               isAffConnected ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-300'
             }`}>
               {isAffConnected ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
-              {isAffConnected ? 'Connected' : 'Chưa cấu hình'}
+              {isAffConnected ? 'Đã cấu hình' : 'Chưa cấu hình'}
             </span>
           </div>
 
@@ -191,13 +190,13 @@ export default function ShopeeSettingsPage() {
             <div className="flex justify-between">
               <span className="text-slate-400">Shopee Affiliate API:</span>
               <span className={isAffConnected ? 'text-emerald-400 font-bold' : 'text-amber-300 font-bold'}>
-                {isAffConnected ? 'Connected' : 'Not Connected'}
+                {isAffConnected ? 'Đã cấu hình' : 'Chưa cấu hình'}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Affiliate Link Generation:</span>
               <span className={isAffConnected ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                {isAffConnected ? 'Available' : 'Unavailable'}
+                {isAffConnected ? 'Cần kiểm tra quyền' : 'Chưa cấu hình'}
               </span>
             </div>
             <div className="flex justify-between">

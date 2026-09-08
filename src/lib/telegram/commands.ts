@@ -1,4 +1,4 @@
-export type AgentCommand = { action: 'help' | 'status' | 'industries' | 'products' | 'jobs' | 'scan' | 'prompt' | 'chatgpt' | 'video' | 'cancel'; argument: string };
+export type AgentCommand = { action: 'help' | 'status' | 'industries' | 'products' | 'jobs' | 'scan' | 'prompt' | 'chatgpt' | 'video' | 'cancel' | 'reviews' | 'approve'; argument: string };
 export const HELP = `AFF HUB Agent
 /status — trạng thái hệ thống
 /industries — ngành hàng và mã
@@ -8,6 +8,8 @@ export const HELP = `AFF HUB Agent
 /chatgpt tên hoặc mã ngành — gửi prompt qua extension
 /video mã sản phẩm — tạo video (sử dụng credit Flow)
 /jobs — 10 công việc gần nhất
+/reviews — video và nội dung chờ duyệt
+/approve mã bài — duyệt nội dung và xếp lịch Page đã chọn
 /cancel mã công việc — hủy việc còn chờ
 
 Cũng hiểu: “trạng thái”, “ngành hàng”, “quét shop <link>”, “tìm sản phẩm <từ khóa>”, “viết prompt <ngành>”, “tạo video <mã>”.
@@ -15,7 +17,7 @@ Chrome và extension phải đang chạy để quét/ChatGPT/video. /prompt ch�
 
 export function parseCommand(text: string): AgentCommand | null {
   const value = text.trim();
-  const slash = value.match(/^\/(start|help|status|industries|products|jobs|scan|prompt|chatgpt|video|cancel)(?:@[a-zA-Z0-9_]+)?(?:\s+([\s\S]*))?$/i);
+  const slash = value.match(/^\/(start|help|status|industries|products|jobs|scan|prompt|chatgpt|video|cancel|reviews|approve)(?:@[a-zA-Z0-9_]+)?(?:\s+([\s\S]*))?$/i);
   if (slash) return { action: (slash[1].toLowerCase() === 'start' ? 'help' : slash[1].toLowerCase()) as AgentCommand['action'], argument: slash[2]?.trim() || '' };
   const normalized = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
   const patterns: [RegExp, AgentCommand['action']][] = [

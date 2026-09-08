@@ -1,4 +1,5 @@
 'use client';
+import { DataError } from '@/components/ui/DataError';
 
 import { isServiceUrl } from '@/lib/products/industry';
 import { ProductKnowledgeButton } from '@/components/collections/ProductKnowledgeButton';
@@ -118,6 +119,7 @@ function LibraryContent() {
   const [products, setProducts] = useState<any[]>([]);
   const [shops, setShops] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [filterType, setFilterType] = useState<string>('all');
   const [platformFilter, setPlatformFilter] = useState<string>('all');
@@ -417,7 +419,9 @@ function LibraryContent() {
       }
 
       const res = await fetch(url);
+      if (!res.ok) throw new Error("Không tải được sản phẩm");
       const data = await res.json();
+      setLoadError(false);
       if (data.products) {
         setProducts(data.products);
       }
@@ -431,7 +435,7 @@ function LibraryContent() {
         setDbTargetCustomers(data.distinctTargetCustomers);
       }
     } catch (err) {
-      console.error('Error fetching library products:', err);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -498,7 +502,8 @@ function LibraryContent() {
 
   // Section 20: 1-Click Copy Affiliate Link (Button state toggle for 2 seconds)
   const handleCopyAffLink = (affUrl: string | null, origUrl: string, id: string) => {
-    const linkToCopy = affUrl || origUrl;
+    if (!affUrl) { showToast('Chưa có link affiliate. Hãy tạo link trước.'); return; }
+    const linkToCopy = affUrl;
     navigator.clipboard.writeText(linkToCopy);
     setCopiedId(id);
     showToast('Đã copy Affiliate Link vào Clipboard!');
@@ -521,7 +526,7 @@ function LibraryContent() {
         showToast(data.error || 'Lỗi khi tạo link');
         return;
       }
-      showToast('Đã tạo Affiliate Link thành công!');
+      showToast(data.status === 'pending' ? 'Đã xếp hàng tạo link, đang chờ extension trả kết quả thật.' : data.affiliateUrl ? 'Đã tạo Affiliate Link thành công!' : 'Chưa có link affiliate từ nhà cung cấp.');
       fetchProducts();
     } catch (err) {
       console.error(err);
@@ -547,7 +552,7 @@ function LibraryContent() {
         showToast(data.error || 'Lỗi khi tạo link hàng loạt');
         return;
       }
-      showToast(`Đã khởi tạo ${data.successCount} Affiliate Links thành công!`);
+      showToast(`Đã có ${data.successCount} link thật; ${data.pendingCount || 0} đang chờ extension; ${data.failedCount} lỗi.`);
       fetchProducts();
     } catch (err) {
       console.error(err);
@@ -576,11 +581,12 @@ function LibraryContent() {
     if (selectedProducts.length === 0) return;
 
     const formattedList = selectedProducts
-      .map((p) => `${p.name}\n${p.affiliateUrl || p.originalUrl}`)
+      .filter((p) => p.affiliateUrl)
+      .map((p) => `${p.name}\n${p.affiliateUrl}`)
       .join('\n\n');
 
     navigator.clipboard.writeText(formattedList);
-    showToast(`Đã copy ${selectedProducts.length} link Affiliate dạng danh sách!`);
+    showToast(`Đã copy ${selectedProducts.filter(p => p.affiliateUrl).length} link affiliate; bỏ qua sản phẩm chưa có link.`);
   };
 
   const handleExportCSV = () => {
@@ -696,7 +702,7 @@ function LibraryContent() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2">
-            Thư Viện Sản Phẩm <span className="text-xs px-2.5 py-1 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 font-mono">{products.length} Items</span>
+            Thư Viện Sản Phẩm <span className="text-xs px-2.5 py-1 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 font-mono">{loading || loadError ? '—' : products.length} sản phẩm</span>
           </h1>
           <p className="text-xs text-slate-400">Tìm kiếm & quản lý toàn bộ sản phẩm từ Database các Shop đã quét.</p>
         </div>
@@ -1033,7 +1039,7 @@ function LibraryContent() {
             onClick={() => setFilterType('all')}
             className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${filterType === 'all' ? 'gradient-shopee text-white shadow-glow' : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white'}`}
           >
-            Tất Cả ({products.length})
+            Tất cả ({loading || loadError ? '—' : products.length})
           </button>
           <button
             onClick={() => setFilterType('viral')}
@@ -1072,8 +1078,13 @@ function LibraryContent() {
       </div>
 
       {/* Section 22: Bulk Action Toolbar */}
+      {selectedIds.length > 0 && <button type="button" className="rounded-xl bg-amber-600 px-4 py-3 text-white" onClick={() => {
+        if (selectedIds.length > 50) { showToast('Chọn tối đa 50 sản phẩm cho một đợt video.'); return; }
+        sessionStorage.setItem('aff-batch-selection', JSON.stringify(products.filter(p => selectedIds.includes(p.id)).map(p => ({ id: p.id, name: p.name, image: p.image, affiliateLinks: p.affiliateUrl ? [{ affiliateUrl: p.affiliateUrl }] : [] }))));
+        router.push('/ai-video?batch=1');
+      }}>Tạo video chờ duyệt từ sản phẩm đã chọn</button>}
       {selectedIds.length > 0 && (
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-900/90 to-indigo-900/90 border border-purple-500/50 flex items-center justify-between text-xs text-white shadow-xl animate-fade-in">
+        <div className="sticky bottom-20 md:bottom-4 z-20 p-4 rounded-2xl bg-gradient-to-r from-purple-900/90 to-indigo-900/90 border border-purple-500/50 flex items-center justify-between text-xs text-white shadow-xl animate-fade-in">
           <div className="flex items-center gap-3 font-semibold">
             <span className="w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center text-xs">{selectedIds.length}</span>
             <span>Sản phẩm đã chọn</span>
@@ -1140,7 +1151,7 @@ function LibraryContent() {
             </div>
           ))}
         </div>
-      ) : products.length === 0 ? (
+      ) : loadError ? <DataError title="Chưa tải được thư viện sản phẩm" onRetry={fetchProducts} busy={loading} /> : products.length === 0 ? (
         <div className="text-center py-16 glass-card rounded-3xl space-y-3">
           <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-slate-800 to-slate-900 mx-auto flex items-center justify-center">
             <ShoppingBag className="w-16 h-16 text-slate-500" />
@@ -1155,7 +1166,7 @@ function LibraryContent() {
             <div key={p.id} className="glass-card rounded-2xl overflow-hidden flex flex-col justify-between group relative">
               <input
                 type="checkbox"
-                checked={selectedIds.includes(p.id)}
+                aria-label={`Chọn ${p.name}`} checked={selectedIds.includes(p.id)}
                 onChange={() => toggleSelect(p.id)}
                 className="absolute top-3 left-3 z-10 w-5 h-5 rounded border-slate-700 text-purple-600 focus:ring-purple-500 cursor-pointer"
               />
@@ -1413,7 +1424,7 @@ function LibraryContent() {
             <thead>
               <tr className="border-b border-slate-800 bg-slate-900/80 text-slate-400 font-semibold">
                 <th className="p-3">
-                  <input type="checkbox" onChange={toggleSelectAll} checked={selectedIds.length === products.length} />
+                  <input type="checkbox" aria-label="Chọn tất cả sản phẩm đang hiển thị" onChange={toggleSelectAll} checked={selectedIds.length === products.length} />
                 </th>
                 <th className="p-3">Sản Phẩm</th>
                 <th className="p-3">Giá Bán</th>

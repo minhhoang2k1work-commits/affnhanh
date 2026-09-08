@@ -37,3 +37,7 @@ dev.db-journal
 *.tsbuildinfo
 next-env.d.ts
 
+
+# Local AutoCut handoff queue
+.autocut/
+.next-live/

@@ -1,7 +1,9 @@
 import { db } from '../db';
 
 export const DEFAULT_FLOW_TEMPLATE_ID = 'a1b2c3d4-e5f6-4a5b-8c7d-e9f0a1b2c3d4';
-export const BATCH_FACEBOOK_TEMPLATE_ID = 'de932561-50de-45ac-85da-480448745dec';
+export const LEGACY_BATCH_FACEBOOK_TEMPLATE_ID = 'de932561-50de-45ac-85da-480448745dec';
+export const AUTOCUT_BATCH_TEMPLATE_ID = '2ba0b251-494d-4b74-bfb9-b7a9f425146c';
+export const BATCH_FACEBOOK_TEMPLATE_ID = 'f120d766-18aa-46a0-a598-a8c22627361d';
 
 export const templates = [
   {
@@ -55,15 +57,38 @@ export const templates = [
 ];
 
 templates.push({
+  id: LEGACY_BATCH_FACEBOOK_TEMPLATE_ID,
+  name: 'Sản phẩm → Video → Facebook (cũ)',
+  description: 'Giữ cấu trúc bước cho các đợt cũ; kết quả đưa về bản nháp chờ duyệt.',
+  category: 'video_generation', isSystem: true,
+  steps: [
+    ...templates.find(template => template.id === DEFAULT_FLOW_TEMPLATE_ID)!.steps.filter(step => step.type !== 'notify'),
+    { id: 'facebook-queue', type: 'queue_facebook', name: 'Lưu bản nháp chờ duyệt', config: {}, dependencies: ['step-7'] },
+  ],
+});
+
+templates.push({
   id: BATCH_FACEBOOK_TEMPLATE_ID,
   name: 'Sản phẩm → Video → Facebook',
-  description: 'Mỗi sản phẩm một video, tự gắn link và xếp lịch đăng Facebook.',
+  description: 'Lấy link affiliate, tạo video và nội dung từ dữ liệu sản phẩm, lưu bản nháp chờ duyệt.',
   category: 'video_generation',
   isSystem: true,
   steps: [
-    ...templates.find(template => template.id === DEFAULT_FLOW_TEMPLATE_ID)!.steps.filter(step => step.type !== 'notify'),
-    { id: 'facebook-queue', type: 'queue_facebook', name: 'Gắn link và xếp lịch Facebook', config: {}, dependencies: ['step-7'] },
+    { id: 'affiliate-link', type: 'resolve_affiliate', name: 'Lấy link affiliate thật', config: {}, dependencies: [] },
+    ...templates.find(template => template.id === DEFAULT_FLOW_TEMPLATE_ID)!.steps.filter(step => step.type !== 'notify').map(step => step.id === 'step-1' ? { ...step, dependencies: ['affiliate-link'] } : step),
+    { id: 'publishing-copy', type: 'generate_publishing_copy', name: 'ChatGPT viết tiêu đề và mô tả', config: {}, dependencies: ['step-7'] },
+    { id: 'facebook-queue', type: 'queue_facebook', name: 'Lưu danh sách chờ duyệt', config: {}, dependencies: ['publishing-copy'] },
+    { id: 'telegram-review', type: 'notify_video_review', name: 'Gửi video qua Telegram để duyệt', config: {}, dependencies: ['facebook-queue'] },
   ],
+});
+
+templates.push({
+  id: AUTOCUT_BATCH_TEMPLATE_ID, name: 'Sản phẩm → AutoCut → Duyệt đăng',
+  description: 'Tạo video, áp template AutoCut và xác minh tệp thật trước khi gửi duyệt.',
+  category: 'video_generation', isSystem: true,
+  steps: templates.find(t => t.id === BATCH_FACEBOOK_TEMPLATE_ID)!.steps.flatMap(step =>
+    step.id === 'step-6' ? [step, { id: 'autocut-render', type: 'autocut_render', name: 'AutoCut áp template và xuất thư mục chờ', config: {}, dependencies: ['step-6'] }] :
+    step.id === 'step-7' ? [{ ...step, dependencies: ['autocut-render'] }] : [step]),
 });
 
 let seedPromise: Promise<void> | null = null;

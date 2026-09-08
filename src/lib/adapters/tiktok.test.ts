@@ -40,14 +40,10 @@ describe('TikTokAdapter & URL Scanner Integration', () => {
     expect(prodResult.productId).toBe('172948291048201');
   });
 
-  it('generates TikTok affiliate links with subIds', async () => {
-    const link = await adapter.generateAffiliateLink({
+  it('does not fabricate TikTok tracking links when no provider is integrated', async () => {
+    await expect(adapter.generateAffiliateLink({
       originUrl: 'https://www.tiktok.com/view/product/172948291048201',
       subIds: ['FB_REEL', 'CAMP_01'],
-    });
-
-    expect(link).toContain('vt.tiktok.com/t/aff_redir');
-    expect(link).toContain('sub_id1=FB_REEL');
-    expect(link).toContain('sub_id2=CAMP_01');
+    })).rejects.toThrow('Chưa tích hợp API');
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-const state = vi.hoisted(() => ({ records: new Map<string, any>(), jobs: vi.fn(), scans: vi.fn(), send: vi.fn() }));
+const state = vi.hoisted(() => ({ records: new Map<string, any>(), jobs: vi.fn(), scans: vi.fn(), send: vi.fn(), post: vi.fn(), updatePost: vi.fn(), events: vi.fn() }));
 vi.mock('../db', () => {
   const commands = {
     findUnique: async ({ where }: any) => state.records.get(where.id) || null,
@@ -7,7 +7,7 @@ vi.mock('../db', () => {
     create: async ({ data }: any) => { state.records.set(data.id, { ...data }); return data; },
     update: async ({ where, data }: any) => { const next = { ...state.records.get(where.id), ...data }; state.records.set(where.id, next); return next; },
   };
-  const tx = { telegramCommand: commands, scanJob: { create: state.scans }, extensionJob: { create: state.jobs } };
+  const tx = { telegramCommand: commands, scanJob: { create: state.scans }, extensionJob: { create: state.jobs }, publishingPost: { findFirst: state.post, findMany: async () => [], updateMany: state.updatePost }, publishingEvent: { create: state.events } };
   return { db: { ...tx, $transaction: async (fn: any) => fn(tx) } };
 });
 vi.mock('./client', () => ({ sendTelegramText: state.send }));
@@ -34,5 +34,20 @@ describe('Telegram job dispatch', () => {
   it('persists a validation error without executing the invalid URL', async () => {
     await handleTelegramUpdate(message('/scan https://shopee.vn.evil.test'));
     expect(state.jobs).not.toHaveBeenCalled(); expect(state.records.get('123:10').status).toBe('failed');
+  });
+  it('only schedules a draft after an authorized explicit approval, once', async () => {
+    state.post.mockResolvedValue({ id: 'post', status: 'draft', title: 'Sản phẩm', channelId: 'page', updatedAt: new Date(), channel: { name: 'Page thật', paused: false, verifiedAt: new Date(), slots: ['09:00', '19:00'] } });
+    state.updatePost.mockResolvedValue({ count: 1 });
+    await handleTelegramUpdate(message('/approve post'));
+    await handleTelegramUpdate(message('/approve post'));
+    expect(state.post).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'post', userId: 'owner' } }));
+    expect(state.updatePost).toHaveBeenCalledTimes(1);
+    expect(state.updatePost).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'scheduled', scheduledAt: expect.any(Date) }) }));
+  });
+  it('refuses approval when the destination Page is paused', async () => {
+    state.post.mockResolvedValue({ id: 'post', status: 'draft', channel: { paused: true } });
+    await handleTelegramUpdate(message('/approve post'));
+    expect(state.updatePost).not.toHaveBeenCalled();
+    expect(state.records.get('123:10').status).toBe('failed');
   });
 });

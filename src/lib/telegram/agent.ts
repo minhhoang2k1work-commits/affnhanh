@@ -4,12 +4,28 @@ import { buildIndustryPrompt, isServiceUrl, validateIndustry } from '../products
 import { AgentCommand, HELP, marketplaceUrl, parseCommand } from './commands';
 import { authorizedMessage, telegramConfig } from './config';
 import { sendTelegramText } from './client';
+import { nextQueueSlot } from '../publishing/schedule';
 
 type Outcome = { reply: string; jobId?: string; scanJobId?: string };
 
 async function execute(tx: Prisma.TransactionClient, userId: string, command: AgentCommand): Promise<Outcome> {
   const { action, argument } = command;
   if (action === 'help') return { reply: HELP };
+  if (action === 'reviews') {
+    const posts = await tx.publishingPost.findMany({ where: { userId, status: 'draft' }, include: { channel: true }, take: 10, orderBy: { createdAt: 'desc' } });
+    return { reply: posts.map(post => `${post.title}\nPage: ${post.channel.name}\n${post.text}\nDuyệt: /approve ${post.id}`).join('\n\n') || 'Không có bài chờ duyệt.' };
+  }
+  if (action === 'approve') {
+    const post = await tx.publishingPost.findFirst({ where: { id: argument, userId }, include: { channel: true } });
+    if (!post || post.status !== 'draft') throw new Error('Không tìm thấy bài chờ duyệt. Gửi /reviews để kiểm tra.');
+    if (post.channel.paused || !post.channel.verifiedAt) throw new Error('Page chưa được xác minh hoặc đang tạm dừng. Cấu hình Page trên web trước.');
+    const occupied = await tx.publishingPost.findMany({ where: { channelId: post.channelId, status: { in: ['scheduled', 'preparing'] } }, select: { scheduledAt: true } });
+    const scheduledAt = nextQueueSlot(post.channel.slots as string[], occupied.flatMap(item => item.scheduledAt ? [item.scheduledAt] : []));
+    const claimed = await tx.publishingPost.updateMany({ where: { id: post.id, userId, status: 'draft', updatedAt: post.updatedAt }, data: { status: 'scheduled', scheduledAt, error: null } });
+    if (!claimed.count) throw new Error('Bài vừa thay đổi. Kiểm tra lại trước khi duyệt.');
+    await tx.publishingEvent.create({ data: { postId: post.id, status: 'scheduled', message: 'Người dùng duyệt đăng qua Telegram.' } });
+    return { reply: `Đã duyệt ${post.title}\nPage: ${post.channel.name}\nLịch: ${scheduledAt.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}\nĐây là lịch chờ đăng, chưa phải xác nhận xuất bản.` };
+  }
   if (action === 'status') {
     const [products, queued, device] = await Promise.all([
       tx.product.count({ where: { userId } }),
@@ -98,7 +114,7 @@ export async function handleTelegramUpdate(update: unknown) {
         result = { reply: error instanceof Error ? error.message : 'Không thực hiện được lệnh.' }; status = 'failed';
       }
       await tx.telegramCommand.update({ where: { id }, data: { ...result, status: result.jobId ? 'queued' : status } });
-    }, { timeout: 15000 });
+    }, { timeout: 15000, isolationLevel: 'Serializable' });
   } catch (error) { if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error; }
   await deliverReply(id);
   return { accepted: true };

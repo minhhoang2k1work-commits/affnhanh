@@ -1,11 +1,13 @@
 'use client';
 
+import { DataError } from '@/components/ui/DataError';
 import React, { useEffect, useState } from 'react';
 import { KeyRound, ShieldCheck, Plus, CheckCircle2, Lock, Sparkles, Loader2, RefreshCw, AlertCircle, Globe, MonitorPlay, AlertTriangle, LogIn } from 'lucide-react';
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const [platform, setPlatform] = useState('SHOPEE');
@@ -26,6 +28,8 @@ export default function AccountsPage() {
   const fetchAccounts = async () => {
     try {
       const res = await fetch('/api/accounts');
+      if (!res.ok) throw new Error();
+      setLoadError(false);
       const data = await res.json();
       if (data.accounts) setAccounts(data.accounts);
 
@@ -33,6 +37,7 @@ export default function AccountsPage() {
       const bData = await bRes.json();
       setBrowserStatus(bData);
     } catch (err) {
+      setLoadError(true);
       console.error(err);
     } finally {
       setLoading(false);
@@ -281,7 +286,7 @@ export default function AccountsPage() {
       )}
 
       {/* List of Official API Accounts */}
-      {loading ? (
+      {loadError ? <DataError onRetry={fetchAccounts} busy={loading} /> : loading ? (
         <div className="text-center py-12 text-slate-500 text-xs">Đang tải danh sách tài khoản...</div>
       ) : accounts.length === 0 ? (
         <div className="text-center py-12 glass-card rounded-3xl space-y-3">

@@ -1,9 +1,11 @@
+import { workerStatus } from '@/lib/autocut/queue';
 import { NextResponse } from 'next/server';
 import ffmpegStatic from 'ffmpeg-static';
 import { db, getOrCreateUser } from '@/lib/db';
 import { ensureFlowTemplates } from '@/lib/flow/templates';
 import { isYouTubeConfigured } from '@/lib/publishing/youtube';
 import { isGoogleDriveAutoUploadEnabled, isGoogleDriveConfigured } from '@/lib/storage/google-drive';
+import { isTelegramConfigured } from '@/lib/telegram/config';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +21,7 @@ export async function GET() {
       }),
       db.flowTemplate.count({ where: { isSystem: true } }),
       db.product.count({ where: { userId: user.id, isActive: true } }),
-      db.affiliateLink.count({ where: { userId: user.id } }),
+      db.affiliateLink.count({ where: { userId: user.id, status: 'ACTIVE' } }),
       db.extensionDevice.findFirst({ where: { userId: user.id, lastSeenAt: { gte: extensionThreshold } }, select: { id: true } }),
       db.affiliateAccount.findFirst({
         where: { userId: user.id, platform: 'ACCESSTRADE', status: 'ACTIVE' },
@@ -34,6 +36,9 @@ export async function GET() {
       isGoogleDriveConfigured(user.id),
       isGoogleDriveAutoUploadEnabled(user.id),
     ]);
+    const autoCut = await workerStatus();
+    let flowConnected = false;
+    try { const response = await fetch('http://127.0.0.1:8766/ws_status', { signal: AbortSignal.timeout(2000) }); const status = await response.json(); flowConnected = response.ok && status.connected === true && status.extension_version_supported === true; } catch { /* No live bridge. */ }
     const checks = {
       database: true,
       encryption: Boolean(process.env.ENCRYPTION_KEY && process.env.ENCRYPTION_KEY.length >= 32),
@@ -51,6 +56,9 @@ export async function GET() {
       driveStorage: driveConfigured && driveAutoUpload,
       youtubePublishing: isYouTubeConfigured(),
       conversionReporting: Boolean(reportingAccount),
+      telegramReview: isTelegramConfigured(),
+      googleFlowBatchConnected: flowConnected,
+      autocutTemplateWorker: autoCut.online && autoCut.state !== 'blocked' && autoCut.templates.length > 0,
     };
     const optionalChecks = new Set(['youtubePublishing']);
     const blockers = Object.entries(checks)
@@ -61,6 +69,8 @@ export async function GET() {
       readyForVideoCanary: checks.llmProvider && checks.videoProvider && checks.ffmpeg && checks.flowTemplates,
       checks,
       blockers,
+      verification: 'configuration_only_not_a_successful_live_run',
+      missingIntegrations: [!flowConnected && 'Chưa nhận kết nối Google Flow extension', !checks.autocutTemplateWorker && 'Chưa nhận worker AutoCut và template'].filter(Boolean),
       counts: { providers: providers.length, templates: templateCount, products: productCount, affiliateLinks: affiliateLinkCount },
     });
   } catch (error: any) {

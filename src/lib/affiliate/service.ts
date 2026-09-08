@@ -1,9 +1,10 @@
 import { db } from '../db';
 import { getAdapter } from '../adapters';
 import { decryptText } from '../crypto';
+import { assertAffiliateUrl } from './validation';
 
 export interface GenerateLinkResult {
-  status: 'success' | 'pending_configuration' | 'not_eligible' | 'failed';
+  status: 'success' | 'pending' | 'pending_configuration' | 'not_eligible' | 'failed';
   affiliateUrl?: string;
   errorMessage?: string;
 }
@@ -24,8 +25,12 @@ export class AffiliateLinkService {
       where: { id: productId },
     });
 
-    if (!product) {
+    if (!product || product.userId !== userId) {
       return { status: 'failed', errorMessage: 'Sản phẩm không tồn tại.' };
+    }
+
+    if (product.platform !== 'SHOPEE') {
+      return { status: 'failed', errorMessage: 'Chưa có dịch vụ tự tạo link thật cho nền tảng này. Nhập link lấy trực tiếp từ tài khoản affiliate trước.' };
     }
 
     if (!product.hasAffiliate) {
@@ -53,7 +58,8 @@ export class AffiliateLinkService {
       });
 
       // Queue a job for the extension to handle via Web Dashboard automation
-      await db.extensionJob.create({
+      const existingJob = await db.extensionJob.findFirst({ where: { userId, productId, type: 'GENERATE_AFFILIATE_LINK', status: { in: ['queued', 'claimed', 'processing'] } } });
+      if (!existingJob) await db.extensionJob.create({
         data: {
           userId,
           type: 'GENERATE_AFFILIATE_LINK',
@@ -69,7 +75,7 @@ export class AffiliateLinkService {
       });
 
       return {
-        status: 'success',
+        status: 'pending',
         errorMessage: 'Đã gửi yêu cầu tạo link qua Extension (Web Dashboard). Vui lòng đợi...',
       };
     }
@@ -85,6 +91,7 @@ export class AffiliateLinkService {
         subIds: [subId],
         credentials: { appId, appSecret },
       });
+      assertAffiliateUrl(affiliateUrl, product.originalUrl);
 
       // Save to AffiliateLink table
       const linkRecord = await db.affiliateLink.upsert({

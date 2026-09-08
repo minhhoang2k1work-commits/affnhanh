@@ -111,7 +111,7 @@ export class ShopeeAdapter implements MarketplaceAdapter {
           const logoHash = data.portrait || data.cover;
           const logoUrl = logoHash
             ? `https://down-vn.img.susercontent.com/file/${logoHash}`
-            : 'https://images.unsplash.com/photo-1534452203293-494d7ddbf7e0?w=200&auto=format&fit=crop&q=80';
+            : '';
 
           return {
             platform: 'SHOPEE',
@@ -137,13 +137,13 @@ export class ShopeeAdapter implements MarketplaceAdapter {
       platform: 'SHOPEE',
       externalShopId: shopIdentifier,
       name: formattedName,
-      logo: 'https://images.unsplash.com/photo-1534452203293-494d7ddbf7e0?w=200&auto=format&fit=crop&q=80',
+      logo: '',
       shopUrl: `https://shopee.vn/${isNumeric ? 'shop/' + shopIdentifier : shopIdentifier}`,
       productCount: 0,
       metadata: {
         source: 'Shopee Canonical URL Resolver',
         fetchedAt: new Date().toISOString(),
-        isRealData: true,
+        isRealData: false,
       },
     };
   }
@@ -245,7 +245,7 @@ export class ShopeeAdapter implements MarketplaceAdapter {
           const imgHash = item.image || item.images?.[0];
           const imageUrl = imgHash
             ? (imgHash.startsWith('http') ? imgHash : `https://down-vn.img.susercontent.com/file/${imgHash}`)
-            : 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=80';
+            : '';
 
           const salePriceVnd = item.price ? Math.round(item.price / 100000) : 0;
           const rawOriginalPrice = item.price_before_discount || item.price_max || item.price;
@@ -267,7 +267,7 @@ export class ShopeeAdapter implements MarketplaceAdapter {
             price: origPriceVnd,
             salePrice: salePriceVnd,
             commissionRate,
-            stock: item.stock || 100,
+            stock: item.stock ?? 0,
           });
 
           products.push({
@@ -280,7 +280,7 @@ export class ShopeeAdapter implements MarketplaceAdapter {
             salePrice: salePriceVnd,
             sold: soldCount,
             rating: ratingStar,
-            stock: item.stock || 100,
+            stock: item.stock ?? 0,
             originalUrl: `https://shopee.vn/product/${shopIdStr}/${prodId}`,
             category: item.catid ? `Danh mục #${item.catid}` : 'Shopee Catalog',
             hasAffiliate: true,
@@ -315,7 +315,7 @@ export class ShopeeAdapter implements MarketplaceAdapter {
 
   async getProductDetail(productId: string, shopId: string): Promise<ExtendedProductInfo | null> {
     const list = await this.getProducts(shopId, 30);
-    return list.find((p) => p.externalProductId === productId) || list[0] || null;
+    return list.find((p) => p.externalProductId === productId) || null;
   }
 
   async generateAffiliateLink(input: GenerateAffiliateLinkInput): Promise<string> {
@@ -367,11 +367,6 @@ export class ShopeeAdapter implements MarketplaceAdapter {
       }
     }
 
-    const cleanOrigin = encodeURIComponent(originUrl);
-    const subParams = subIds.map((sub, idx) => `sub_id${idx + 1}=${encodeURIComponent(sub)}`).join('&');
-    const trackingTag = subParams ? `&${subParams}` : '';
-    const hash = crypto.createHash('md5').update(originUrl + (subIds.join('_') || '')).digest('hex').substring(0, 8);
-
-    return `https://s.shopee.vn/an_redir?origin_link=${cleanOrigin}&aff_id=100889201${trackingTag}&hash=${hash}`;
+    throw new Error('Shopee chưa trả link affiliate thật. Kiểm tra tài khoản/API hoặc tạo link qua dashboard; không dùng link tracking tự ghép.');
   }
 }

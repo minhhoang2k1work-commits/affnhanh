@@ -13,6 +13,9 @@
  */
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import path from 'node:path';
+import { GENERATED_VIDEO } from '@/lib/publishing/schedule';
+import { inspectImportedVideo } from '@/lib/publishing/media';
 
 /** Format trao đổi giữa AFF scenes → AutoCut NLE timeline */
 interface NLETimelineExport {
@@ -122,7 +125,7 @@ async function handleExportTimeline(body: { projectId: string }) {
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
 
-  const portrait = (project as any).aspectRatio === '9:16';
+  const portrait = ((project as any).aspectRatio || '9:16') === '9:16';
   let currentTime = 0;
 
   // Video track — từ các scene clips
@@ -225,45 +228,7 @@ async function handleSubmitRender(body: {
     format?: string;
   };
 }) {
-  const { projectId, priority = 'normal', renderSettings } = body;
-
-  if (!projectId) {
-    return NextResponse.json({ error: 'Missing projectId' }, { status: 400 });
-  }
-
-  const project = await db.aIVideoProject.findUnique({
-    where: { id: projectId },
-  });
-
-  if (!project) {
-    return NextResponse.json({ error: 'Project not found' }, { status: 404 });
-  }
-
-  // Lưu render request vào DB (status: pending)
-  // AutoCut sẽ poll endpoint này để lấy job
-  await db.aIVideoProject.update({
-    where: { id: projectId },
-    data: {
-      status: 'rendering',
-    },
-  });
-
-  return NextResponse.json({
-    success: true,
-    renderJob: {
-      projectId,
-      status: 'pending',
-      priority,
-      renderSettings: renderSettings || {
-        codec: 'h264',
-        quality: 'high',
-        resolution: '1080p',
-        fps: 30,
-        format: 'mp4',
-      },
-      submittedAt: new Date().toISOString(),
-    },
-  });
+  return NextResponse.json({ error: 'AutoCut chưa có worker tự nhận render theo template. Import dự án và xuất video từ AutoCut trước.', accepted: false }, { status: 501 });
 }
 
 /**
@@ -280,14 +245,16 @@ async function handleUpdateRenderStatus(body: {
 }) {
   const { projectId, status, progress, outputUrl, thumbnailUrl, error: errorMsg, renderInfo } = body;
 
-  if (!projectId || !status) {
+  if (!projectId || !['rendering', 'completed', 'failed'].includes(status)) {
     return NextResponse.json({ error: 'Missing projectId or status' }, { status: 400 });
   }
 
   const updateData: Record<string, unknown> = { status };
 
   if (status === 'completed') {
-    if (outputUrl) updateData.videoUrl = outputUrl;
+    if (!outputUrl || !GENERATED_VIDEO.test(outputUrl)) return NextResponse.json({ error: 'Cần đường dẫn MP4 thật trong generated trước khi hoàn tất.' }, { status: 400 });
+    updateData.videoDuration = await inspectImportedVideo(path.join(process.cwd(), 'public', outputUrl));
+    updateData.videoUrl = outputUrl;
     if (thumbnailUrl) updateData.thumbnailUrl = thumbnailUrl;
     updateData.status = 'completed';
   }
@@ -296,9 +263,7 @@ async function handleUpdateRenderStatus(body: {
     updateData.errorMessage = errorMsg;
   }
 
-  if (renderInfo) {
-    updateData.renderSettings = renderInfo;
-  }
+  // renderSettings is not a field in AIVideoProject; never write it to Prisma.
 
   await db.aIVideoProject.update({
     where: { id: projectId },

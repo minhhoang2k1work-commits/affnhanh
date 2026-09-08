@@ -30,11 +30,9 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
     try {
       const res = await fetch('/api/health');
       const data = await res.json();
-      if (data.extension === 'connected') {
-        setIsExtConnected(true);
-      }
+      setIsExtConnected(data.extension === 'connected');
     } catch {
-      // ignore
+      setIsExtConnected(false);
     }
   };
 
@@ -113,10 +111,11 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
         </div>
 
         {/* Global Search Bar (Responsive) */}
-        <form onSubmit={handleSearchSubmit} className="relative flex-1 max-w-[180px] sm:max-w-xs md:w-96">
+        <form onSubmit={handleSearchSubmit} className="relative flex-1 min-w-0 max-w-[180px] sm:max-w-xs md:w-96">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
+            aria-label="Tìm sản phẩm trong thư viện"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Tìm sản phẩm..."
@@ -132,17 +131,17 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
             onClick={handleBadgeClick}
             title={extensionInfo?.installed ? 'Bấm để xem thông tin máy & bản quyền đang kết nối' : 'Bấm để tải & cài đặt Extension'}
             className={`flex items-center gap-2 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl border text-[11px] sm:text-xs font-semibold transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-sm ${
-              extensionInfo?.installed
+              extensionInfo?.ready
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
                 : isExtConnected
                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
                   : 'bg-gradient-to-r from-purple-900/40 to-amber-900/30 border-amber-500/40 text-amber-300 hover:border-amber-400'
             }`}
           >
-            <span className={`w-2 h-2 rounded-full ${extensionInfo?.installed || isExtConnected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
+            <span className={`w-2 h-2 rounded-full ${extensionInfo?.ready || isExtConnected ? 'bg-emerald-400' : 'bg-amber-400'}`} />
             <span className="hidden lg:inline">
               {extensionInfo?.installed
-                ? `Extension: ${extensionInfo.licenseName || (extensionInfo.deviceToken ? `${extensionInfo.deviceToken.slice(0, 10)}...` : 'Sẵn sàng')}`
+                ? `Extension: ${extensionInfo.ready ? 'Sẵn sàng' : 'Chưa kích hoạt'}`
                 : isExtConnected
                   ? 'Extension ● Đã kết nối'
                   : '📥 Tải Extension'}
@@ -155,23 +154,23 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
           {/* Quick Shop Scanner CTA */}
           <button
             onClick={() => router.push('/scanner')}
-            className="flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl gradient-shopee text-white font-medium text-xs shadow-glow hover:brightness-110 active:scale-95 transition-all flex-shrink-0"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl gradient-shopee text-white font-medium text-xs shadow-glow hover:brightness-110 active:scale-95 transition-all flex-shrink-0"
           >
             <ScanLine className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="hidden sm:inline">QUÉT SHOP MỚI</span>
-            <span className="sm:hidden font-bold">QUÉT</span>
+            <span className="hidden sm:inline">Thêm sản phẩm</span>
+            <span className="sm:hidden font-bold">Thêm SP</span>
           </button>
 
           {/* Profile / Account Badge */}
-          <div className="flex items-center gap-2 sm:gap-3 pl-1 sm:pl-2 border-l border-slate-800 flex-shrink-0">
+          <div className="hidden md:flex items-center gap-2 sm:gap-3 pl-1 sm:pl-2 border-l border-slate-800 flex-shrink-0">
             <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white text-xs font-bold shadow-md">
-              CR
+              AFF
             </div>
             <div className="hidden xl:block text-left">
               <div className="text-xs font-semibold text-white flex items-center gap-1">
-                Creator Pro <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                Không gian cá nhân
               </div>
-              <div className="text-[10px] text-slate-400">Shopee Affiliate</div>
+              <div className="text-[10px] text-slate-400">Video affiliate</div>
             </div>
           </div>
         </div>

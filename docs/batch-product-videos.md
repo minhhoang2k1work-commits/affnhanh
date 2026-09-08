@@ -1,17 +1,21 @@
-# Tạo video sản phẩm và đăng Facebook hàng loạt
+# Video sản phẩm hàng loạt và duyệt đăng
 
-Mở **AI Video Studio → Hàng Loạt → FB**.
+Trong Thư viện sản phẩm, chọn tối đa 50 sản phẩm rồi bấm **Tạo video chờ duyệt từ sản phẩm đã chọn**. Hoặc mở AI Video Studio → Hàng loạt.
 
-1. Chọn Page đã kiểm tra và bật tự đăng tại `/publishing`. Cấu hình khung giờ của Page; video hoàn tất sẽ chiếm khung giờ trống kế tiếp theo giờ Việt Nam.
-2. Chọn phong cách, thời lượng và tối đa 50 sản phẩm. Có thể tìm kiếm, chuyển trang mà vẫn giữ lựa chọn, hoặc chọn cả trang. Sản phẩm cần có ảnh và link affiliate ACTIVE của tài khoản hiện tại; tạo link trong thư viện trước nếu thiếu.
-3. Bấm **Tạo N video và tự đăng Facebook**. Mỗi sản phẩm có một dự án video và một pipeline riêng. Nút này cho phép tạo video bằng cấu hình AI hiện tại và tự đăng lên Page đã chọn.
-4. Theo dõi tiến độ tại phần video hàng loạt gần đây. Khi một bước lỗi, sửa cấu hình liên quan rồi bấm **Thử lại bước bị lỗi**; những bước đã hoàn tất được giữ lại.
-5. Xem lịch và kết quả tại `/publishing`. Trạng thái `submitted_unknown` chỉ có nghĩa đã gửi lệnh đăng; cần kiểm tra trên Facebook theo quy trình hiện có.
+1. Chọn Page dự kiến. Page có thể còn tạm dừng khi tạo bản nháp; phải được xác minh và bật trước lúc duyệt đăng.
+2. AFF lưu mỗi sản phẩm thành một dự án và một flow, cùng Page và link affiliate tương ứng. Nếu thiếu link, bước đầu tiên gọi dịch vụ affiliate hoặc xếp công việc cho extension rồi chờ link ACTIVE. Không dùng link sản phẩm thường để thay thế.
+3. Tạo kịch bản, storyboard, clip, thuyết minh và ghép MP4 bằng nhà cung cấp AI cùng FFmpeg hiện có. **Đây chưa phải luồng Google Flow → template AutoCut.**
+4. ChatGPT/OpenAI viết tiêu đề, mô tả và hashtag từ hồ sơ sản phẩm đã lưu. AFF gắn link affiliate ở phía máy chủ. Đây là nội dung tạo từ dữ liệu đã lưu, không phải xác nhận đã đọc lại trang sản phẩm hay đã xem video thành phẩm.
+5. Lưu PublishingPost ở trạng thái draft, chưa có lịch đăng. Tệp video nằm trong public/generated theo dự án; chưa có thư mục chờ riêng của AutoCut.
+6. Bước Telegram gửi tệp MP4 (tối đa 49 MB), nội dung và Page tới các người dùng được phép trong cấu hình Telegram. Gửi /reviews để xem bản nháp; /approve mã-bài để duyệt và xếp lịch. Có thể duyệt trong Quản lý đăng bài trên web.
+7. Extension chỉ nhận bài đã lên lịch. submitted_unknown chưa phải bằng chứng đã đăng thành công; cần permalink/kết quả kiểm tra theo luồng publishing hiện có.
 
-Nội dung bài đăng gồm tên sản phẩm, lời mời xem thông tin/giá hiện tại, đúng link affiliate của sản phẩm và thông báo tiếp thị liên kết. Link được chụp lại khi tạo đợt, được gắn vào mô tả bài đăng, không phải thẻ sản phẩm Facebook Shop. Không tự tạo link affiliate hoặc thay bằng link thường khi thiếu link.
+Thiếu Telegram hoặc gửi thất bại sẽ báo lỗi bước thông báo, giữ video đã render và bản nháp để xử lý lại. Trường hợp mất phản hồi Telegram sau khi nhận tệp có thể gửi lại tệp khi retry; không dùng kết quả gửi tin nhắn làm bằng chứng xuất bản.
 
-Máy chủ AFF, nhà cung cấp AI đã cấu hình và hồ sơ Chrome có extension đăng Facebook cần hoạt động. Sau khi máy chủ khởi động lại, dùng cơ chế worker `/api/flows/worker` hiện có hoặc cấu hình `FLOW_AUTO_START=true` cùng `DATABASE_URL` để nạp lại hàng đợi. Google Drive chỉ được dùng theo cấu hình tự lưu hiện có.
+Flow mới dùng ID riêng để không thay đổi quan hệ phụ thuộc của các flow cũ. Các flow cũ khi tới bước xếp bài cũng tạo bản nháp; bài đã được lên lịch trước bản sửa này không tự bị thu hồi.
 
-Không cần thay đổi schema. Dự án, flow và cấu hình đăng được lưu trong một transaction; mỗi yêu cầu có khóa chống tạo trùng. Bước Facebook dùng khóa đăng ổn định khi retry và tái kiểm tra Page trước khi xếp lịch. Page bị tạm dừng hoặc mất xác minh sẽ làm bước xếp lịch báo lỗi.
+Sau khi máy chủ khởi động lại, cần worker /api/flows/worker hoặc cấu hình FLOW_AUTO_START theo cơ chế hiện có để tiếp tục hàng đợi. Không chạy npm run build chỉ để kiểm tra TypeScript: script build hiện còn gọi prisma db push.
 
-Kiểm chứng: unit test cho giới hạn, quyền sở hữu sản phẩm/Page, thiếu link, ánh xạ sản phẩm/link, yêu cầu lặp và retry đăng bài; kiểm tra TypeScript và giao diện. Chưa kiểm chứng đăng thật trong môi trường thiếu kết nối database/extension.
+## Cập nhật 08/09/2026
+
+Đã bổ sung lựa chọn Google Flow, worker AutoCut theo template và thư mục chờ; đã đọc được database thật ngoài sandbox. Xem `automation-handoff-2026-09-08.md` để biết cách khởi động, bằng chứng hiện tại và phần cần cấu hình tài khoản. Các kết luận mất kết nối/chưa có worker ở báo cáo 07/09 là trạng thái lịch sử.

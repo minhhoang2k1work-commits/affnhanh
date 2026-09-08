@@ -12,6 +12,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="bg-slate-950 text-slate-100 min-h-screen flex antialiased relative">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-xl focus:bg-violet-600 focus:px-4 focus:py-3 focus:text-white">Đến nội dung chính</a>
       {/* Sidebar - Desktop Sticky & Mobile Drawer */}
       <Sidebar 
         isOpen={isMobileMenuOpen} 
@@ -21,7 +22,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
         <Header onOpenMobileMenu={openMobileMenu} />
-        <main className="flex-1 p-4 sm:p-6 md:p-8 pb-24 md:pb-8 overflow-y-auto max-w-7xl w-full mx-auto">
+        <main id="main-content" tabIndex={-1} className="flex-1 p-4 sm:p-6 md:p-8 pb-28 md:pb-8 overflow-y-auto max-w-7xl w-full mx-auto">
           {children}
         </main>
       </div>

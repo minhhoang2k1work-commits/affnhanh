@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db, getOrCreateUser } from '@/lib/db';
 import { createVideoBatch } from '@/lib/flow/batch';
-import { BATCH_FACEBOOK_TEMPLATE_ID } from '@/lib/flow/templates';
+import { AUTOCUT_BATCH_TEMPLATE_ID, BATCH_FACEBOOK_TEMPLATE_ID, LEGACY_BATCH_FACEBOOK_TEMPLATE_ID } from '@/lib/flow/templates';
 import { flowQueue } from '@/lib/flow/queue';
 import { publishingFailure } from '@/lib/publishing/http';
 
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
       ]);
       return NextResponse.json({ products, total, channels });
     }
-    const runs = await db.flowRun.findMany({ where: { userId: user.id, templateId: BATCH_FACEBOOK_TEMPLATE_ID }, orderBy: { createdAt: 'desc' }, take: 100, select: { id: true, status: true, progress: true, errorMessage: true, videoProjectId: true, videoProject: { select: { title: true } } } });
+    const runs = await db.flowRun.findMany({ where: { userId: user.id, templateId: { in: [AUTOCUT_BATCH_TEMPLATE_ID, BATCH_FACEBOOK_TEMPLATE_ID, LEGACY_BATCH_FACEBOOK_TEMPLATE_ID] } }, orderBy: { createdAt: 'desc' }, take: 100, select: { id: true, status: true, progress: true, errorMessage: true, videoProjectId: true, videoProject: { select: { title: true } } } });
     const posts = await db.publishingPost.findMany({ where: { userId: user.id, projectId: { in: runs.flatMap(run => run.videoProjectId ? [run.videoProjectId] : []) } }, select: { projectId: true, status: true, scheduledAt: true, error: true } });
     return NextResponse.json({ runs: runs.map(run => ({ ...run, post: posts.find(post => post.projectId === run.videoProjectId) || null })) });
   } catch (error) { return batchFailure(error); }

@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir: process.env.AFF_LIVE_PREVIEW === '1' ? '.next-live' : '.next',
   serverExternalPackages: ['playwright', 'ffmpeg-static'],
   images: {
     remotePatterns: [

@@ -1,4 +1,5 @@
 import { normalizeKnowledge } from '../products/knowledge';
+import { assertAffiliateUrl } from '../affiliate/validation';
 
 export interface ReelCopy { title: string; caption: string; hashtags: string[] }
 
@@ -29,6 +30,7 @@ export function parseReelCopy(raw: string): ReelCopy {
 
 export function reelText(copy: ReelCopy, affiliateUrl = '') {
   if (affiliateUrl) {
+    assertAffiliateUrl(affiliateUrl);
     const url = new URL(affiliateUrl);
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Link sản phẩm không hợp lệ.');
   }

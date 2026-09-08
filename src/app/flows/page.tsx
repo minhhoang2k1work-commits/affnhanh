@@ -1,4 +1,5 @@
 'use client';
+import { DataError } from '@/components/ui/DataError';
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -37,15 +38,20 @@ export default function FlowManagerPage() {
   const [templates, setTemplates] = useState<any[]>([]);
   const [runs, setRuns] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<'templates' | 'history'>('templates');
+  const [loadError, setLoadError] = useState(false);
+  const [reload, setReload] = useState(0);
+  const [activeSection, setActiveSection] = useState<'templates' | 'history'>('history');
 
   useEffect(() => {
     const fetchData = async () => {
+      setIsLoading(true);
       try {
         const [templatesRes, runsRes] = await Promise.all([
           fetch('/api/flows'),
           fetch('/api/flows/runs?limit=20'),
         ]);
+        if (!templatesRes.ok || !runsRes.ok) throw new Error("Không tải được tiến độ");
+        setLoadError(false);
         if (templatesRes.ok) {
           const data = await templatesRes.json();
           setTemplates(data.templates || []);
@@ -55,13 +61,13 @@ export default function FlowManagerPage() {
           setRuns(data.runs || []);
         }
       } catch (err) {
-        console.error('Failed to fetch:', err);
+        setLoadError(true);
       } finally {
         setIsLoading(false);
       }
     };
     fetchData();
-  }, []);
+  }, [reload]);
 
   const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
     pending: { label: 'Chờ xử lý', color: 'text-slate-400 bg-slate-500/10', icon: Clock },
@@ -115,7 +121,7 @@ export default function FlowManagerPage() {
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
         </div>
-      ) : (
+      ) : loadError ? <DataError title="Chưa tải được tiến độ tạo video" onRetry={() => setReload(v => v + 1)} /> : (
         <>
           {/* Templates Section */}
           {activeSection === 'templates' && (

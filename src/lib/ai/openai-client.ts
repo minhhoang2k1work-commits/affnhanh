@@ -83,7 +83,7 @@ function extractOutputText(payload: any): string {
   throw new Error('OpenAI returned no text output.');
 }
 
-async function createStructuredResponse<T>(params: {
+export async function createStructuredResponse<T>(params: {
   apiKey: string;
   name: string;
   schema: Record<string, unknown>;

@@ -45,7 +45,7 @@ export async function GET() {
   return NextResponse.json({
     database: dbStatus,
     dbError,
-    shopeeProductSource: 'ready',
+    shopeeProductSource: 'not_verified',
     shopeeAffiliate: shopeeAffiliateStatus,
     extension: extensionStatus,
     lastExtensionSeen,

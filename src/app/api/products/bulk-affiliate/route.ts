@@ -18,12 +18,13 @@ export async function POST(req: NextRequest) {
 
     if (Array.isArray(productIds) && productIds.length > 0) {
       targetProducts = await db.product.findMany({
-        where: { id: { in: productIds }, hasAffiliate: true },
+        where: { userId: user.id, id: { in: productIds }, hasAffiliate: true },
       });
     } else {
       // Find all products pending configuration or missing affiliate links
       targetProducts = await db.product.findMany({
         where: {
+          userId: user.id,
           hasAffiliate: true,
           affiliateStatus: { in: ['pending', 'pending_configuration', 'failed'] },
         },
@@ -32,6 +33,7 @@ export async function POST(req: NextRequest) {
 
     let successCount = 0;
     let failedCount = 0;
+    let pendingCount = 0;
     let pendingConfig = false;
 
     for (const prod of targetProducts) {
@@ -43,6 +45,8 @@ export async function POST(req: NextRequest) {
 
       if (res.status === 'success') {
         successCount++;
+      } else if (res.status === 'pending') {
+        pendingCount++;
       } else if (res.status === 'pending_configuration') {
         pendingConfig = true;
         break;
@@ -66,6 +70,7 @@ export async function POST(req: NextRequest) {
       processedCount: targetProducts.length,
       successCount,
       failedCount,
+      pendingCount,
     });
   } catch (error: any) {
     console.error('Error generating bulk affiliate links:', error);

@@ -1,7 +1,9 @@
-import { db } from '@/lib/db';
+import { randomUUID } from 'node:crypto';
+import { db } from '../db';
 import { stepHandlers } from './steps';
 import { buildStepContext } from './context';
 import { ensureFlowTemplates } from './templates';
+import { FlowWaiting } from './waiting';
 
 const MAX_RETRIES = 3;
 const STALE_STEP_MS = 30 * 60 * 1000;
@@ -21,6 +23,7 @@ const PROJECT_STATUS_BY_STEP: Record<string, string> = {
   generate_video: 'generating_video',
   generate_voice: 'generating_voiceover',
   assemble: 'assembling',
+  autocut_render: 'assembling',
   upload_drive: 'archiving',
 };
 
@@ -94,7 +97,7 @@ export class FlowEngine {
 
       const exhausted = sortedRuns.find((step) => step.status === 'failed' && step.retryCount >= MAX_RETRIES);
       if (exhausted) {
-        await this.failFlow(runId, run.videoProjectId, exhausted.errorMessage || `${exhausted.stepName} failed`);
+        await this.failFlow(runId, run.videoProjectId, exhausted.errorMessage || `${exhausted.stepName} failed`, ['generate_publishing_copy', 'queue_facebook', 'notify_video_review'].includes(exhausted.stepType));
         return;
       }
 
@@ -156,6 +159,10 @@ export class FlowEngine {
       await this.handleStepComplete(stepRun.id, input, result, startedAt);
       return true;
     } catch (error: any) {
+      if (error instanceof FlowWaiting) {
+        await db.flowStepRun.update({ where: { id: stepRun.id }, data: { status: 'pending', errorMessage: error.message, startedAt: null } });
+        return false;
+      }
       await this.handleStepError(stepRun.id, error, startedAt);
       return false;
     }
@@ -222,7 +229,7 @@ export class FlowEngine {
     }
   }
 
-  private async failFlow(runId: string, videoProjectId: string | null, message: string) {
+  private async failFlow(runId: string, videoProjectId: string | null, message: string, videoAlreadyRendered = false) {
     await db.flowRun.update({
       where: { id: runId },
       data: { status: 'failed', completedAt: new Date(), currentStepId: null, errorMessage: message },
@@ -230,7 +237,7 @@ export class FlowEngine {
     if (videoProjectId) {
       await db.aIVideoProject.update({
         where: { id: videoProjectId },
-        data: { status: 'failed', errorMessage: message },
+        data: { status: videoAlreadyRendered ? 'completed' : 'failed', errorMessage: message },
       });
     }
   }
@@ -262,13 +269,13 @@ export class FlowEngine {
   }
 
   async retryFlow(runId: string) {
-    await db.flowStepRun.updateMany({
-      where: { runId, status: 'failed' },
-      data: { status: 'pending', retryCount: 0, errorMessage: null, startedAt: null, completedAt: null },
-    });
-    await db.flowRun.update({
-      where: { id: runId },
-      data: { status: 'pending', completedAt: null, errorMessage: null, currentStepId: null },
+    await db.$transaction(async tx => {
+      const run = await tx.flowRun.findUnique({ where: { id: runId } });
+      if (!run || run.status !== 'failed') throw new Error('Chỉ thử lại luồng đã thất bại; kiểm tra luồng đang chạy trước.');
+      const input = (run.inputData || {}) as Record<string, any>;
+      const updated = await tx.flowRun.updateMany({ where: { id: runId, status: 'failed' }, data: { status: 'pending', completedAt: null, errorMessage: null, currentStepId: null, ...((input.autoCut || input.videoSource === 'google_flow') ? { inputData: { ...input, handoffAttempt: randomUUID() } } : {}) } });
+      if (!updated.count) throw new Error('Luồng đã được xử lý ở phiên khác.');
+      await tx.flowStepRun.updateMany({ where: { runId, status: 'failed' }, data: { status: 'pending', retryCount: 0, errorMessage: null, startedAt: null, completedAt: null } });
     });
   }
 

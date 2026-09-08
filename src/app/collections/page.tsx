@@ -1,5 +1,6 @@
 'use client';
 
+import { DataError } from '@/components/ui/DataError';
 import React, { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -64,6 +65,7 @@ export default function CollectionsPage() {
     totalReadyLinks: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Active collection detail view
@@ -109,6 +111,8 @@ export default function CollectionsPage() {
     try {
       setLoading(true);
       const res = await fetch('/api/collections');
+      if (!res.ok) throw new Error();
+      setLoadError(false);
       const data = await res.json();
       if (data.collections) {
         setCollections(data.collections);
@@ -117,6 +121,7 @@ export default function CollectionsPage() {
         setStats(data.stats);
       }
     } catch (err) {
+      setLoadError(true);
       console.error('Error fetching collections:', err);
     } finally {
       setLoading(false);
@@ -552,7 +557,7 @@ export default function CollectionsPage() {
               </div>
               <div>
                 <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Tổng Bộ Sưu Tập</div>
-                <div className="text-xl sm:text-2xl font-black text-white">{stats.totalCollections}</div>
+                <div className="text-xl sm:text-2xl font-black text-white">{loading || loadError ? '—' : stats.totalCollections}</div>
               </div>
             </div>
 
@@ -562,7 +567,7 @@ export default function CollectionsPage() {
               </div>
               <div>
                 <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Sản Phẩm Đã Phân Loại</div>
-                <div className="text-xl sm:text-2xl font-black text-indigo-300">{stats.totalCategorizedProducts}</div>
+                <div className="text-xl sm:text-2xl font-black text-indigo-300">{loading || loadError ? '—' : stats.totalCategorizedProducts}</div>
               </div>
             </div>
 
@@ -573,7 +578,7 @@ export default function CollectionsPage() {
               <div>
                 <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Hoa Hồng Dự Kiến</div>
                 <div className="text-xl sm:text-2xl font-black text-emerald-400">
-                  {formatCurrency(stats.totalPotentialCommission || 0)}
+                  {loading || loadError ? '—' : formatCurrency(stats.totalPotentialCommission || 0)}
                 </div>
               </div>
             </div>
@@ -585,7 +590,7 @@ export default function CollectionsPage() {
               <div>
                 <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Link Đã Sẵn Sàng</div>
                 <div className="text-xl sm:text-2xl font-black text-amber-400">
-                  {stats.totalReadyLinks} <span className="text-xs font-normal text-slate-400">({stats.totalCategorizedProducts > 0 ? Math.round((stats.totalReadyLinks / stats.totalCategorizedProducts) * 100) : 0}%)</span>
+                  {loading || loadError ? '—' : stats.totalReadyLinks} <span className="text-xs font-normal text-slate-400">({stats.totalCategorizedProducts > 0 ? Math.round((stats.totalReadyLinks / stats.totalCategorizedProducts) * 100) : 0}%)</span>
                 </div>
               </div>
             </div>
@@ -651,7 +656,7 @@ export default function CollectionsPage() {
           </div>
 
           {/* Collections Grid */}
-          {loading ? (
+          {loadError ? <DataError onRetry={fetchCollections} busy={loading} /> : loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {[...Array(6)].map((_, i) => (
                 <div key={i} className="glass-card p-6 rounded-3xl space-y-4 animate-pulse">

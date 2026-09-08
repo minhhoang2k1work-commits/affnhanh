@@ -1,4 +1,5 @@
 'use client';
+import { DataError } from '@/components/ui/DataError';
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -22,16 +23,21 @@ export default function VideoLibraryPage() {
   const router = useRouter();
   const [projects, setProjects] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [actionError, setActionError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
 
   const fetchProjects = async () => {
+    setIsLoading(true);
     try {
       const params = new URLSearchParams({ limit: '50' });
       if (statusFilter !== 'all') params.set('status', statusFilter);
       if (searchQuery) params.set('search', searchQuery);
       const res = await fetch(`/api/ai-video?${params}`);
+      if (!res.ok) throw new Error();
+      setLoadError(false);
       if (res.ok) {
         const data = await res.json();
         let items = data.projects || [];
@@ -40,7 +46,7 @@ export default function VideoLibraryPage() {
         setProjects(items);
       }
     } catch (err) {
-      console.error('Failed to fetch:', err);
+      setLoadError(true);
     } finally {
       setIsLoading(false);
     }
@@ -58,8 +64,14 @@ export default function VideoLibraryPage() {
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm('Xóa video này?')) return;
-    await fetch(`/api/ai-video/${id}`, { method: 'DELETE' });
-    setProjects((prev) => prev.filter((p) => p.id !== id));
+    setActionError('');
+    try {
+      const response = await fetch(`/api/ai-video/${id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error();
+      setProjects((prev) => prev.filter((p) => p.id !== id));
+    } catch {
+      setActionError('Chưa xóa được video. Vui lòng thử lại.');
+    }
   };
 
   const statusLabels: Record<string, { label: string; color: string }> = {
@@ -117,7 +129,8 @@ export default function VideoLibraryPage() {
       </div>
 
       {/* Content */}
-      {isLoading ? (
+      {actionError && <p role="alert" className="text-sm text-amber-200">{actionError}</p>}
+      {loadError && !isLoading ? <DataError title="Chưa tải được thư viện video" onRetry={fetchProjects} /> : isLoading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
         </div>

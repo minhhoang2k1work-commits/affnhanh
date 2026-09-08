@@ -1,3 +1,4 @@
+import { fitSceneDurations } from '../autocut/duration';
 import { buildProductBrief } from '@/lib/products/knowledge';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -113,6 +114,12 @@ const llm_storyboard: StepHandler = async (input) => {
 
   if (config.maxScenes) scenes = scenes.slice(0, Number(config.maxScenes));
   if (scenes.length === 0) throw new Error('The LLM returned an empty storyboard.');
+  const saved = input.flowRunId ? await db.flowRun.findUnique({ where: { id: input.flowRunId } }) : null;
+  if ((saved?.inputData as { autoCut?: unknown })?.autoCut) {
+    const durations = fitSceneDurations(scenes.map(scene => Number(scene.duration)), project.duration);
+    scenes = scenes.map((scene, index) => ({ ...scene, duration: durations[index] }));
+    if (storyboard) storyboard = { ...storyboard, scenes };
+  }
 
   await db.$transaction([
     db.aIVideoScene.deleteMany({ where: { projectId: project.id } }),
@@ -269,6 +276,8 @@ async function generateBrowserClip(provider: any, scene: any, outputDir: string)
 }
 
 const generate_video: StepHandler = async (input) => {
+  const savedRun = input.flowRunId ? await db.flowRun.findUnique({ where: { id: input.flowRunId } }) : null;
+  if ((savedRun?.inputData as { videoSource?: string })?.videoSource === 'google_flow') return (await import('../autocut/google-flow')).generateGoogleFlow(input.flowRunId);
   const project = await getProject(input.videoProjectId);
   const scenes = await getScenes(project.id);
   if (scenes.length === 0) throw new Error('Storyboard scenes are required before video generation.');
@@ -368,10 +377,14 @@ const upload_drive: StepHandler = async (input) => {
 
 const notify: StepHandler = async (input) => {
   console.log(`[Flow] Video project ${input.videoProjectId} completed.`);
-  return { notified: true, notifiedAt: new Date().toISOString() };
+  return { notified: false, reason: 'log_only_no_message_sent' };
 };
 
 export const stepHandlers: Record<string, StepHandler> = {
+  autocut_render: async input => (await import('../autocut/step')).renderAutoCut(input.flowRunId),
+  notify_video_review: async input => (await import('../telegram/video-review')).notifyVideoReview(input.flowRunId),
+  resolve_affiliate: async input => (await import('./batch-steps')).resolveBatchAffiliate(input.flowRunId),
+  generate_publishing_copy: async input => (await import('./batch-steps')).generateBatchCopy(input.flowRunId),
   queue_facebook: async (input) => {
     const { queueBatchFacebook } = await import('./batch');
     return queueBatchFacebook(input.videoProjectId, input.flowRunId);

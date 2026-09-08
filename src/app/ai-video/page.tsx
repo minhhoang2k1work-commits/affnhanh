@@ -26,6 +26,7 @@ import { CreativeBlueprintPanel } from '@/components/ai-video/CreativeBlueprintP
 import { FlowRunTracker } from '@/components/ai-video/FlowRunTracker';
 import { VideoPlayer } from '@/components/ai-video/VideoPlayer';
 import { GoogleDrivePanel } from '@/components/ai-video/GoogleDrivePanel';
+import { DataError } from '@/components/ui/DataError';
 import { BatchVideoStudio } from '@/components/ai-video/BatchVideoStudio';
 import { resolveSelectedFlowTemplateId } from '@/lib/flow/template-selection';
 
@@ -34,11 +35,13 @@ type Tab = 'create' | 'batch' | 'processing' | 'library';
 
 export default function AIVideoStudioPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<Tab>('create');
+  const [activeTab, setActiveTab] = useState<Tab>('batch');
   const [wizardStep, setWizardStep] = useState<WizardStep>('form');
   const [isLoading, setIsLoading] = useState(false);
   const [currentProject, setCurrentProject] = useState<any>(null);
   const [projects, setProjects] = useState<any[]>([]);
+  const [projectsError, setProjectsError] = useState(false);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [processingProjects, setProcessingProjects] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
@@ -46,8 +49,12 @@ export default function AIVideoStudioPage() {
 
   // Preserve the flow selected from /flows and make that choice visible here.
   useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (['create', 'batch', 'processing', 'library'].includes(query.get('tab') || '')) setActiveTab(query.get('tab') as Tab);
+    if (query.get('batch') === '1') setActiveTab('batch');
     const templateId = resolveSelectedFlowTemplateId(window.location.search);
     if (!templateId) return;
+    setActiveTab('create');
 
     setSelectedTemplateId(templateId);
     fetch('/api/flows')
@@ -66,6 +73,7 @@ export default function AIVideoStudioPage() {
         fetch('/api/ai-video?limit=20&status=completed'),
         fetch('/api/ai-video?limit=20&status=generating_video,scripting,storyboarding,generating_images,generating_voiceover,assembling,archiving'),
       ]);
+      if (!allRes.ok || !processingRes.ok) throw new Error("Không tải được video");
       if (allRes.ok) {
         const data = await allRes.json();
         setProjects(data.projects || []);
@@ -74,8 +82,12 @@ export default function AIVideoStudioPage() {
         const data = await processingRes.json();
         setProcessingProjects(data.projects || []);
       }
+      setProjectsError(false);
     } catch (err) {
+      setProjectsError(true);
       console.error('Failed to fetch projects:', err);
+    } finally {
+      setProjectsLoaded(true);
     }
   }, []);
 
@@ -189,14 +201,14 @@ export default function AIVideoStudioPage() {
   };
 
   const tabs: { key: Tab; label: string; icon: any; count?: number }[] = [
-    { key: 'create', label: 'Tạo Mới', icon: Plus },
-    { key: 'batch', label: 'Hàng Loạt → FB', icon: Workflow },
+    { key: 'create', label: 'Tạo video riêng', icon: Plus },
+    { key: 'batch', label: 'Tạo hàng loạt', icon: Workflow },
     { key: 'processing', label: 'Đang Xử Lý', icon: Loader2, count: processingProjects.length },
     { key: 'library', label: 'Thư Viện', icon: Library },
   ];
 
   return (
-    <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       {/* Page Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -228,7 +240,7 @@ export default function AIVideoStudioPage() {
         </div>
       </motion.div>
 
-      <GoogleDrivePanel />
+      <details className="rounded-xl border border-slate-800 p-4"><summary className="cursor-pointer text-sm text-slate-300">Lưu trữ Google Drive (tùy chọn)</summary><div className="mt-4"><GoogleDrivePanel /></div></details>
 
       {selectedTemplateId && (
         <div className="px-4 py-3 rounded-xl bg-purple-500/10 border border-purple-500/25 text-sm text-purple-200 flex items-center gap-2">
@@ -353,7 +365,7 @@ export default function AIVideoStudioPage() {
                 <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 text-center space-y-4">
                   <Loader2 className="w-12 h-12 text-amber-400 animate-spin mx-auto" />
                   <p className="text-lg font-semibold">Đang xử lý pipeline AI...</p>
-                  <p className="text-slate-400 text-sm">Video của bạn đang được tạo. Quá trình này có thể mất 2-5 phút.</p>
+                  <p className="text-slate-400 text-sm">Thời gian xử lý tùy số cảnh, nhà cung cấp AI và hàng đợi. Mở tiến độ để xem bước hiện tại.</p>
                   <button
                     onClick={() => router.push(`/ai-video/${currentProject.id}`)}
                     className="px-5 py-2 rounded-xl bg-slate-800 text-white hover:bg-slate-700 transition-colors inline-flex items-center gap-2"
@@ -375,7 +387,7 @@ export default function AIVideoStudioPage() {
             exit={{ opacity: 0, x: 20 }}
             className="space-y-4"
           >
-            {processingProjects.length === 0 ? (
+            {projectsError ? <DataError onRetry={fetchProjects} /> : !projectsLoaded ? <p role="status" className="p-6 text-slate-400">Đang tải video…</p> : processingProjects.length === 0 ? (
               <div className="p-12 rounded-2xl bg-slate-900/80 border border-slate-800 text-center">
                 <Film className="w-16 h-16 text-slate-600 mx-auto mb-4" />
                 <h3 className="text-lg font-semibold text-slate-300">Không có video đang xử lý</h3>
@@ -425,7 +437,7 @@ export default function AIVideoStudioPage() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
           >
-            {projects.length === 0 ? (
+            {projectsError ? <DataError onRetry={fetchProjects} /> : !projectsLoaded ? <p role="status" className="p-6 text-slate-400">Đang tải video…</p> : projects.length === 0 ? (
               <div className="p-12 rounded-2xl bg-slate-900/80 border border-slate-800 text-center">
                 <Library className="w-16 h-16 text-slate-600 mx-auto mb-4" />
                 <h3 className="text-lg font-semibold text-slate-300">Thư viện video trống</h3>

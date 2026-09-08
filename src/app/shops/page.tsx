@@ -1,5 +1,6 @@
 'use client';
 
+import { DataError } from '@/components/ui/DataError';
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Store, RefreshCw, Trash2, ExternalLink, CheckCircle2, PauseCircle, Loader2, ArrowRight } from 'lucide-react';
@@ -7,14 +8,18 @@ import { Store, RefreshCw, Trash2, ExternalLink, CheckCircle2, PauseCircle, Load
 export default function ShopsPage() {
   const [shops, setShops] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [syncingId, setSyncingId] = useState<string | null>(null);
 
   const fetchShops = async () => {
     try {
       const res = await fetch('/api/shops');
+      if (!res.ok) throw new Error();
+      setLoadError(false);
       const data = await res.json();
       if (data.shops) setShops(data.shops);
     } catch (err) {
+      setLoadError(true);
       console.error(err);
     } finally {
       setLoading(false);
@@ -87,7 +92,7 @@ export default function ShopsPage() {
         </Link>
       </div>
 
-      {loading ? (
+      {loadError ? <DataError onRetry={fetchShops} busy={loading} /> : loading ? (
         <div className="text-center py-12 text-slate-500 text-xs">Đang tải danh sách Shop...</div>
       ) : shops.length === 0 ? (
         <div className="text-center py-16 glass-card rounded-3xl space-y-3">

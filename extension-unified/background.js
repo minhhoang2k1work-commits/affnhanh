@@ -516,10 +516,11 @@ async function startCommissionLookup(job) {
 // ═══════════════════════════════════════════════════════════
 
 async function startVideoBrowserPipeline(payload) {
-  videoPipelineState = { status: "running", currentStep: "init", progress: 0, error: null };
+  const error = 'Pipeline video của extension hợp nhất chưa được triển khai. Dùng extension AFF gốc; chưa có video nào được tạo.';
+  videoPipelineState = { status: "failed", currentStep: "init", progress: 0, error };
   await chrome.storage.local.set({ [CONFIG.VIDEO_STATE_KEY]: videoPipelineState });
-  // TODO: Port full pipeline from AFF background.js runVideoBrowserPipeline()
-  console.log("[Hub] Video pipeline started (stub):", payload);
+  if (payload.extensionJobId) await affFetch('/api/extension/jobs/' + payload.extensionJobId + '/result', { method: 'POST', body: JSON.stringify({ error }) });
+  return { success: false, error };
 }
 
 function isVideoPipelineBusy() {

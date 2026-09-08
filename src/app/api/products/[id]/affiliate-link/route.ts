@@ -45,7 +45,8 @@ export async function POST(
     }
 
     return NextResponse.json({
-      success: true,
+      success: result.status === 'success' && Boolean(result.affiliateUrl),
+      accepted: result.status === 'pending',
       status: result.status,
       affiliateUrl: result.affiliateUrl,
     });

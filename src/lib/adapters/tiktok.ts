@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { MarketplaceAdapter, ResolvedUrlResult, ShopInfo, ProductInfo, GenerateAffiliateLinkInput } from './base';
 
 export interface ExtendedTikTokShopInfo extends ShopInfo {
@@ -114,13 +113,13 @@ export class TikTokAdapter implements MarketplaceAdapter {
       platform: 'TIKTOK',
       externalShopId: cleanId,
       name: formattedName,
-      logo: 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=200&auto=format&fit=crop&q=80',
+      logo: '',
       shopUrl: `https://www.tiktok.com/@${cleanId}`,
       productCount: 0,
       metadata: {
         source: 'TikTok Canonical URL Resolver',
         fetchedAt: new Date().toISOString(),
-        isRealData: true,
+        isRealData: false,
       },
     };
   }
@@ -146,49 +145,9 @@ export class TikTokAdapter implements MarketplaceAdapter {
   }
 
   /**
-   * Generate TikTok Shop Affiliate Tracking Link
-   * Supports:
-   * 1. Official Partner API signature (if credentials provided)
-   * 2. Deeplink & SubID tracking format for TikTok Creator / Showcase
+   * No verified TikTok affiliate API is connected. Never synthesize tracking URLs.
    */
-  async generateAffiliateLink(input: GenerateAffiliateLinkInput): Promise<string> {
-    const { originUrl, subIds = [], credentials } = input;
-
-    if (credentials?.appId && credentials?.appSecret) {
-      try {
-        const timestamp = Math.floor(Date.now() / 1000);
-        const payload = {
-          app_key: credentials.appId,
-          timestamp,
-          origin_url: originUrl,
-          sub_ids: subIds,
-        };
-
-        const payloadStr = JSON.stringify(payload);
-        const signature = crypto
-          .createHmac('sha256', credentials.appSecret)
-          .update(payloadStr)
-          .digest('hex');
-
-        // If Partner API is connected:
-        return `https://affiliate.tiktok.com/api/v1/link/generate?app_key=${credentials.appId}&sign=${signature}&url=${encodeURIComponent(originUrl)}`;
-      } catch (err) {
-        console.warn('TikTok Official Partner API signature failed:', err);
-      }
-    }
-
-    // Default High-Performance Tracking Link with SubIDs
-    const cleanOrigin = encodeURIComponent(originUrl);
-    const subParams = subIds
-      .map((sub, idx) => `sub_id${idx + 1}=${encodeURIComponent(sub)}`)
-      .join('&');
-    const trackingTag = subParams ? `&${subParams}` : '';
-    const hash = crypto
-      .createHash('md5')
-      .update(originUrl + (subIds.join('_') || ''))
-      .digest('hex')
-      .substring(0, 8);
-
-    return `https://vt.tiktok.com/t/aff_redir?origin_url=${cleanOrigin}&tt_aff_id=affhub_pro${trackingTag}&hash=${hash}`;
+  async generateAffiliateLink(_input: GenerateAffiliateLinkInput): Promise<string> {
+    throw new Error('Chưa tích hợp API tạo link TikTok thật. Lấy link từ tài khoản TikTok Affiliate; không tự dựng URL tracking.');
   }
 }
